@@ -387,7 +387,9 @@ function drawMarkers() {
     const label = s.price != null ? s.price.toFixed(2) : '✕';
     const m = L.marker([s.lat, s.lon], {zIndexOffset: cls === 'best' || cls === 'near' ? 1000 : cls === 'na' ? -500 : 0,
       icon: L.divIcon({className: '', html: `<div class="pin ${cls}"><span>${label}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
-      .bindPopup(() => popupHtml(s)).on('click', () => select(s.id, false)).addTo(markers);
+      .bindPopup(() => popupHtml(s)).bindTooltip(tipText(s), {direction: 'top', offset: [0, -30]}).on('click', () => select(s.id, false)).addTo(markers);
+    m.stationId = s.id;
+    pipAware(m);
     markerById[s.id] = m;
   });
 }
@@ -406,10 +408,10 @@ function renderSummary() {
                               : `<div class="pick"><div class="k">${k}</div><div class="v">–</div><div class="w">${k === 'Smallest detour' && pending ? 'computing…' : 'none available'}</div></div>`;
   $('#summary').style.display = 'block';
   $('#summary').innerHTML = `<b>${avail}</b> ${FUEL_NAMES[fuel]} station${avail === 1 ? '' : 's'} available within ${$('#corridor').value} km
-    <div class="meta">${km} km · ${h} h ${String(mn).padStart(2, '0')} without traffic${out ? ` · <span style="color:var(--bad)">${out} out of stock</span>` : ''}${opp ? ` · ${opp} on the other carriageway` : ''}</div>
+    <div class="meta">${km} km${traffic ? '' : ` · ${h} h ${String(mn).padStart(2, '0')} without traffic`}${out ? ` · <span style="color:var(--bad)">${out} out of stock</span>` : ''}${opp ? ` · ${opp} on the other carriageway` : ''}</div>
     <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
       ${pick('Smallest detour', nearest, nearest ? detourText(nearest.detour).replace(' detour', '') + (pending ? ' <span class="meta">…</span>' : '') : '')}</div>
-    ${traffic ? `<div class="traffic">🚦 Live traffic: <b>${hm(traffic.duration_s)}</b> · arrive ${new Date(Date.now() + traffic.duration_s * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}${traffic.delay_s >= 60 ? ` · <b class="bad">+${Math.round(traffic.delay_s / 60)} min of delays</b> (red on the map)` : ' · no significant delays'}</div>` : ''}
+    ${traffic ? `<div class="traffic">🚦 With live traffic: <b>${hm(traffic.duration_s)}</b> · arrive ${new Date(Date.now() + traffic.duration_s * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}${traffic.delay_s >= 60 ? ` · <b class="bad">+${Math.round(traffic.delay_s / 60)} min of delays</b> (red on the map)` : ' · no significant delays'}</div>` : ''}
     ${pending ? `<div class="note">Calculating real detours: ${avail - pending}/${avail}</div>` : ''}`;
   $('#summary').querySelectorAll('.pick[data-id]').forEach(p => p.onclick = () => select(p.dataset.id, true));
   $('#listCard').style.display = stations.length ? 'flex' : 'none';
@@ -490,8 +492,8 @@ document.querySelectorAll('.sortbar button').forEach(b => b.onclick = () => {
 function select(id, pan) {
   selId = id; renderList();
   const m = markerById[id];
-  if (m && pan) { showMap(); map.setView(m.getLatLng(), Math.max(map.getZoom(), 14)); m.openPopup(); }
-  else document.querySelector(`.st[data-id="${id}"]`)?.scrollIntoView({block: 'nearest'});
+  if (m && pan) { showMap(); map.setView(m.getLatLng(), Math.max(map.getZoom(), 14)); isPip() ? m.openTooltip() : m.openPopup(); }
+  else document.querySelector(`.st[data-id="${id}"]`)?.scrollIntoView({block: isPip() ? 'center' : 'nearest', behavior: 'smooth'});
 }
 
 function hm(sec) { const m = Math.round(sec / 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; }
@@ -569,8 +571,9 @@ async function showVia(s) {
   idealSel = s.id; renderIdeal(); altLayer.clearLayers();
   if (!markerById[s.id]) {
     L.marker([s.lat, s.lon], {zIndexOffset: 2000, icon: L.divIcon({className: '', html: `<div class="pin best"><span>${s.price.toFixed(2)}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
-      .bindPopup(() => popupHtml(s)).addTo(altLayer).openPopup();
-  } else { markerById[s.id].openPopup(); selId = s.id; renderList(); }
+      .bindPopup(() => popupHtml(s)).bindTooltip(tipText(s), {direction: 'top', offset: [0, -30]}).addTo(altLayer);
+    const am = altLayer.getLayers().at(-1); am.stationId = s.id; pipAware(am); am[isPip() ? 'openTooltip' : 'openPopup']();
+  } else { markerById[s.id][isPip() ? 'openTooltip' : 'openPopup'](); selId = s.id; renderList(); }
   try {
     const r = await (await fetch(`/api/via?trip=${encodeURIComponent(trip)}&id=${s.id}`)).json();
     if (r.error || idealSel !== s.id) return;
@@ -658,6 +661,19 @@ function updatePip() {
     map.invalidateSize();
     if (want && routeLayer && !selId) map.fitBounds(routeLayer.getBounds(), {padding: [10, 10]});
   }, 60);
+}
+const isPip = () => $('#mapBox').classList.contains('pip');
+function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' €' : 'no price'}`; }
+// In the mini-map a full popup would cover everything: show a one-line label and highlight the station in the list instead.
+map.on('popupopen', e => {
+  if (!isPip()) return;
+  const src = e.popup._source; map.closePopup();
+  if (src) { src.openTooltip(); if (src.stationId) select(src.stationId, false); }
+});
+// Replace Leaflet's "click opens popup" with: full map -> popup, mini-map -> one-line label (no panning).
+function pipAware(m) {
+  m.off('click', m._openPopup);
+  m.on('click', () => { if (isPip()) { m.openTooltip(); if (m.stationId) select(m.stationId, false); } else m.openPopup(); });
 }
 function showMap() { if (pipClosed) { pipClosed = false; updatePip(); } }
 new IntersectionObserver(([e]) => { slotVisible = e.intersectionRatio > 0.25; updatePip(); }, {threshold: [0, 0.25, 0.5, 1]}).observe($('#mapSlot'));
