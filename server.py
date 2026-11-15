@@ -45,6 +45,18 @@ UA = {"User-Agent": "route-fuel-finder/2.0"}
 PARIS = ZoneInfo("Europe/Paris")
 FUELS = {"E85", "Gazole", "SP95", "E10", "SP98"}
 
+
+def _config():
+    """Optional local settings in config.json (not committed), e.g. {"tomtom_key": "..."}."""
+    try:
+        with open(os.path.join(HERE, "config.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+TOMTOM_KEY = os.environ.get("TOMTOM_KEY") or _config().get("tomtom_key", "")
+
 _stations = {}          # id -> station dict
 _stations_loaded_at = 0.0
 _lock = threading.Lock()
@@ -399,6 +411,77 @@ def simplify(coords, max_points=3000):
     return [coords[int(i * step)] for i in range(max_points)] + [coords[-1]]
 
 
+# ================================================================ tolls (IGN pgRouting engine exposes "acces_vehicule_leger" = "A péage")
+class TollIndex:
+    """Toll / free status of the roads of a route, looked up by position."""
+
+    def __init__(self, segments):
+        self.cell = 0.01          # degrees
+        self.grid = {}
+        for (x1, y1), (x2, y2), toll in segments:
+            for gx in range(int(math.floor(min(x1, x2) / self.cell)), int(math.floor(max(x1, x2) / self.cell)) + 1):
+                for gy in range(int(math.floor(min(y1, y2) / self.cell)), int(math.floor(max(y1, y2) / self.cell)) + 1):
+                    self.grid.setdefault((gx, gy), []).append(((x1, y1), (x2, y2), toll))
+
+    def is_toll(self, lon, lat, max_km=0.3):
+        kx = 111.32 * math.cos(math.radians(lat))
+        gx, gy = int(math.floor(lon / self.cell)), int(math.floor(lat / self.cell))
+        best = None
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for (x1, y1), (x2, y2), toll in self.grid.get((gx + dx, gy + dy), ()):
+                    ax, ay, bx, by = (x1 - lon) * kx, (y1 - lat) * 110.574, (x2 - lon) * kx, (y2 - lat) * 110.574
+                    vx, vy = bx - ax, by - ay
+                    L2 = vx * vx + vy * vy
+                    t = 0.0 if L2 == 0 else max(0.0, min(1.0, -(ax * vx + ay * vy) / L2))
+                    d = math.hypot(ax + t * vx, ay + t * vy)
+                    if d <= max_km and (best is None or d < best[0]):
+                        best = (d, toll)
+        return bool(best and best[1])
+
+
+def build_toll_index(points):
+    params = {
+        "resource": "bdtopo-pgr", "profile": "car", "optimization": "fastest",
+        "start": "%.6f,%.6f" % points[0], "end": "%.6f,%.6f" % points[-1],
+        "geometryFormat": "geojson", "getSteps": "true", "waysAttributes": "acces_vehicule_leger",
+    }
+    if len(points) > 2:
+        params["intermediates"] = "|".join("%.6f,%.6f" % p for p in points[1:-1])
+    IGN_LIMIT.wait()
+    r = get_json("https://data.geopf.fr/navigation/itineraire?" + urllib.parse.urlencode(params, safe="|,"), 90)
+    segs = []
+    for portion in r["portions"]:
+        for st in portion["steps"]:
+            toll = st.get("attributes", {}).get("acces_vehicule_leger") == "A péage"
+            g = st["geometry"]["coordinates"]
+            segs.extend((tuple(g[i]), tuple(g[i + 1]), toll) for i in range(len(g) - 1))
+    return TollIndex(segs)
+
+
+# ================================================================ live traffic (optional, TomTom free tier)
+def tomtom_route(points):
+    """Route with live traffic. points: [(lon, lat)...]. Returns dict or raises."""
+    locs = ":".join("%.6f,%.6f" % (lat, lon) for lon, lat in points)
+    params = {"key": TOMTOM_KEY, "traffic": "true", "travelMode": "car", "routeType": "fastest",
+              "sectionType": "traffic", "computeTravelTimeFor": "all", "departAt": "now"}
+    r = get_json(f"https://api.tomtom.com/routing/1/calculateRoute/{locs}/json?" + urllib.parse.urlencode(params), 30)
+    rt = r["routes"][0]
+    pts = [[p["longitude"], p["latitude"]] for leg in rt["legs"] for p in leg["points"]]
+    jams = []
+    for s in rt.get("sections", []):
+        if s.get("sectionType") == "TRAFFIC":
+            seg = pts[s["startPointIndex"]:s["endPointIndex"] + 1]
+            jams.append({"coords": simplify(seg, 300), "delay_s": s.get("delayInSeconds", 0),
+                         "kind": s.get("simpleCategory", "OTHER"), "speed": s.get("effectiveSpeedInKmh")})
+    sm = rt["summary"]
+    return {"duration_s": sm["travelTimeInSeconds"], "delay_s": sm.get("trafficDelayInSeconds", 0),
+            "no_traffic_s": sm.get("noTrafficTravelTimeInSeconds"), "distance_m": sm["lengthInMeters"], "jams": jams}
+
+
+_bg_pool = ThreadPoolExecutor(4)
+
+
 # ================================================================ trip cache
 class Trip:
     def __init__(self, key, points):
@@ -407,6 +490,20 @@ class Trip:
         self.index = RouteIndex(self.route)
         self.detours = {}            # station id -> dict
         self.created = time.time()
+        self.tolls = _bg_pool.submit(build_toll_index, points)
+        self.traffic = _bg_pool.submit(tomtom_route, points) if TOMTOM_KEY else None
+        self.traffic_via = {}        # station id -> seconds with traffic via that station
+
+    def exits_toll(self, s, tolls):
+        """True if stopping at s means leaving a toll motorway (and paying to get back on)."""
+        if s["motorway"]:
+            return False          # motorway service area: stays on the toll road
+        n = self.index.nearest(s["lon"], s["lat"], 30)
+        if n is None:
+            return False
+        a = self.index.point_at(n["along_km"] - 1.5)
+        b = self.index.point_at(n["along_km"] + 1.5)
+        return tolls.is_toll(a[0], a[1]) and tolls.is_toll(b[0], b[1])
 
 
 _trips = OrderedDict()
@@ -616,16 +713,11 @@ def ideal_candidates(trip, fuel, band_km):
     return out
 
 
-def via_station_route(trip, sid):
-    """Full route geometry start -> (vias) -> station -> end, for drawing the alternative path."""
-    with _lock:
-        s = _stations.get(sid)
-    if s is None:
-        return None
+def points_via(trip, s):
+    """Trip waypoints with the station inserted where it falls along the route."""
     pts = list(trip.points)
     n = trip.index.nearest(s["lon"], s["lat"], 30)
     along = n["along_km"] if n else 0
-    # insert the station between the waypoints it falls between along the route
     pos = len(pts) - 1
     for i in range(1, len(pts) - 1):
         m = trip.index.nearest(pts[i][0], pts[i][1], 50)
@@ -633,6 +725,33 @@ def via_station_route(trip, sid):
             pos = i
             break
     pts.insert(pos, (s["lon"], s["lat"]))
+    return pts
+
+
+def toll_exits(trip, fuel):
+    """Ids of stations (up to 25 km from the route) that make you leave a toll motorway."""
+    tolls = trip.tolls.result(timeout=90)
+    return [s["id"] for s in stations_for(trip, fuel, 25) if trip.exits_toll(s, tolls)]
+
+
+def traffic_via(trip, sid):
+    if sid in trip.traffic_via:
+        return trip.traffic_via[sid]
+    with _lock:
+        s = _stations.get(sid)
+    if s is None:
+        return None
+    trip.traffic_via[sid] = r = tomtom_route(points_via(trip, s))["duration_s"]
+    return r
+
+
+def via_station_route(trip, sid):
+    """Full route geometry start -> (vias) -> station -> end, for drawing the alternative path."""
+    with _lock:
+        s = _stations.get(sid)
+    if s is None:
+        return None
+    pts = points_via(trip, s)
     try:
         r = ign_route(pts, steps=False)
         coords, dur, dist = r["geometry"]["coordinates"], r["duration"], r["distance"]
@@ -685,10 +804,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_detours(q)
             if u.path == "/api/nearby":
                 return self.api_nearby(q)
-            if u.path in ("/api/ideal", "/api/via"):
+            if u.path in ("/api/ideal", "/api/via", "/api/tolls", "/api/traffic", "/api/traffic_via"):
                 trip = find_trip(q.get("trip", [""])[0])
                 if trip is None:
                     return self.send_json({"error": "Trip expired, search again"}, 410)
+                if u.path == "/api/tolls":
+                    fuel = q.get("fuel", ["E85"])[0]
+                    return self.send_json({"exits": toll_exits(trip, fuel if fuel in FUELS else "E85")})
+                if u.path == "/api/traffic":
+                    if trip.traffic is None:
+                        return self.send_json({"enabled": False})
+                    return self.send_json(dict(trip.traffic.result(timeout=60), enabled=True))
+                if u.path == "/api/traffic_via":
+                    if trip.traffic is None:
+                        return self.send_json({"enabled": False})
+                    base = trip.traffic.result(timeout=60)["duration_s"]
+                    ids = [i for i in q.get("ids", [""])[0].split(",") if i][:6]
+                    futs = {i: _detour_pool.submit(traffic_via, trip, i) for i in ids}
+                    out = {}
+                    for i, f in futs.items():
+                        try:
+                            v = f.result(timeout=60)
+                            out[i] = None if v is None else max(0, v - base)
+                        except Exception as e:
+                            print(f"[traffic] {i}: {e!r}", flush=True)
+                            out[i] = None
+                    return self.send_json({"enabled": True, "detour_s": out})
                 if u.path == "/api/via":
                     return self.send_json(via_station_route(trip, q["id"][0]) or {"error": "Unknown station"})
                 fuel = q.get("fuel", ["E85"])[0]

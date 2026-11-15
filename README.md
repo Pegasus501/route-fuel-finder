@@ -9,6 +9,10 @@ with their latest official prices and stock outages.
   carriageway show their true cost. Motorway service stations on the opposite carriageway are flagged and never suggested.
 - **Ideal stops:** also checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
   then each slower-but-cheaper option with its real saving for your fill, minus the fuel burnt on the extra km), and draws that path.
+- **Toll roads:** flags stations that make you leave a toll motorway ("⚠ leaves toll motorway"), and counts the
+  estimated extra péage (adjustable, default 1.50 €) in the savings, telling you when a cheaper station ends up costing more.
+- **Live traffic (optional):** with a free [TomTom developer](https://developer.tomtom.com) key, shows the ETA with live traffic,
+  jams in red on the map, and each ideal stop's detour with traffic. Put `{"tomtom_key": "..."}` in `config.json` next to `server.py`.
 - **Around a place:** search a radius around your location or an address, measured **by road** or **à vol d'oiseau**.
 - **Stock:** stations reporting a temporary outage are greyed out ("out of stock · 3 h"); prices older than 7 days are flagged.
 - **Brand names** (Esso, TotalEnergies, Leclerc…) are matched from OpenStreetMap; the Maps button opens the station's
@@ -25,6 +29,8 @@ No dependencies beyond **Python 3.9+** standard library. No API keys.
 | Routing, detours, drive-distance areas | [IGN Géoplateforme](https://geoservices.ign.fr/services-geoplateforme-itineraire) (fallback: public OSRM) |
 | Address search | [api-adresse.data.gouv.fr](https://adresse.data.gouv.fr/outils/api-doc/adresse) |
 | Station brands | [OpenStreetMap](https://www.openstreetmap.org) via Overpass (`ref:FR:prix-carburants` tag), refreshed weekly |
+| Toll / free road status | IGN Géoplateforme `bdtopo-pgr` engine (`acces_vehicule_leger`) |
+| Live traffic (optional) | TomTom Routing API (free tier, needs a key) |
 | Map | Leaflet + OpenStreetMap tiles |
 
 ## Run it
