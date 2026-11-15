@@ -3,3 +3,4 @@ cache/
 certs/
 acme-webroot/
 config.json
+CLAUDE.md
