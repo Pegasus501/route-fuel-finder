@@ -11,6 +11,7 @@ certs/, plain-HTTP requests for DOMAIN are redirected to HTTPS. A second small l
 answers Let's Encrypt challenges for certificate renewal.
 """
 import bisect
+import ipaddress
 import re
 import io
 import json
@@ -578,6 +579,8 @@ def build_toll_index(points):
 # ================================================================ live traffic (optional, TomTom free tier)
 def tomtom_route(points):
     """Route with live traffic. points: [(lon, lat)...]. Returns dict or raises."""
+    if not tomtom_allow():
+        raise RuntimeError("TomTom daily cap reached")
     locs = ":".join("%.6f,%.6f" % (lat, lon) for lon, lat in points)
     params = {"key": TOMTOM_KEY, "traffic": "true", "travelMode": "car", "routeType": "fastest",
               "sectionType": "traffic", "computeTravelTimeFor": "all", "departAt": "now"}
@@ -810,6 +813,8 @@ def is_usable(st, max_age_days=7):
 
 # ================================================================ alternative routes
 def _route_coords_tomtom(points):
+    if not tomtom_allow():
+        raise RuntimeError("TomTom daily cap reached")
     locs = ":".join("%.6f,%.6f" % (lat, lon) for lon, lat in points)
     params = {"key": TOMTOM_KEY, "maxAlternatives": 3, "alternativeType": "anyRoute", "traffic": "true",
               "travelMode": "car", "routeType": "fastest"}
@@ -1027,6 +1032,83 @@ def via_station_route(trip, sid):
     return {"route": simplify(coords, 2000), "duration_s": dur, "distance_m": dist}
 
 
+# ================================================================ abuse protection
+# Every visitor (IP) has a budget of "work units" that refills over time; expensive endpoints cost more.
+# A normal trip search with detours, ideal stops and traffic costs ~150 units, so a person never notices it,
+# while a bot hammering the site gets HTTP 429 instead of burning the IGN / TomTom quotas.
+BUDGET_MAX = 1800                 # units (burst: ~8 full trip searches)
+BUDGET_REFILL = 2.0               # units per second (~7200/hour, about one full search every 2 min)
+COSTS = {"/api/route": 15, "/api/nearby": 15, "/api/ideal": 40, "/api/via": 4, "/api/detours": 3, "/api/tolls": 2,
+         "/api/traffic": 5, "/api/traffic_via": 8, "/api/geocode": 1, "/api/reverse": 1, "/api/ev_chains": 1}
+MAX_CONN_PER_IP = 24
+MAX_CONN_TOTAL = 300
+TRUSTED_NETS = [ipaddress.ip_network(n) for n in (
+    "127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",   # loopback, LAN, Tailscale
+    "::1/128", "fe80::/10", "fc00::/7", *os.environ.get("TRUSTED_EXTRA", "").split())]   # IPv6 loopback, local; home LAN via TRUSTED_EXTRA env
+
+_buckets = {}                     # ip -> [units, last_ts]
+_conns = {}                       # ip -> open connections
+_abuse_lock = threading.Lock()
+_total_conns = 0
+
+
+def client_key(addr):
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return addr, False
+    if ip.version == 6 and ip.ipv4_mapped:
+        ip = ip.ipv4_mapped
+    trusted = any(ip in n for n in TRUSTED_NETS)
+    if ip.version == 6:                       # one budget per /64 (a single home or phone gets many IPv6 addresses)
+        ip = ipaddress.ip_network(f"{ip}/64", strict=False).network_address
+    return str(ip), trusted
+
+
+def spend(addr, cost):
+    """True if this visitor may do `cost` units of work now."""
+    key, trusted = client_key(addr)
+    if trusted or cost <= 0:
+        return True
+    now = time.monotonic()
+    with _abuse_lock:
+        units, last = _buckets.get(key, (BUDGET_MAX, now))
+        units = min(BUDGET_MAX, units + (now - last) * BUDGET_REFILL)
+        ok = units >= cost
+        _buckets[key] = [units - cost if ok else units, now]
+        if len(_buckets) > 20000:              # forget idle visitors
+            for k in [k for k, v in _buckets.items() if now - v[1] > 3600]:
+                del _buckets[k]
+    if not ok:
+        print(f"[abuse] rate limited {key}", flush=True)
+    return ok
+
+
+# TomTom free tier = 2,500 requests/day: stop at 2,200 so the key is never blocked or billed (the site then works without traffic)
+TOMTOM_DAILY_CAP = 2200
+TOMTOM_USAGE_FILE = os.path.join(HERE, "cache", "tomtom_usage.json")
+_tt_lock = threading.Lock()
+
+
+def tomtom_allow():
+    today = datetime.now(PARIS).strftime("%Y-%m-%d")
+    with _tt_lock:
+        try:
+            with open(TOMTOM_USAGE_FILE) as f:
+                u = json.load(f)
+        except (OSError, ValueError):
+            u = {}
+        if u.get("date") != today:
+            u = {"date": today, "count": 0}
+        if u["count"] >= TOMTOM_DAILY_CAP:
+            return False
+        u["count"] += 1
+        os.makedirs(os.path.dirname(TOMTOM_USAGE_FILE), exist_ok=True)
+        with open(TOMTOM_USAGE_FILE, "w") as f:
+            json.dump(u, f)
+        return True
+
+
 # ================================================================ HTTP
 class Handler(BaseHTTPRequestHandler):
     server_version = "fuel-route"
@@ -1034,6 +1116,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         pass
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("X-Frame-Options", "DENY")
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
+        self.send_header("Permissions-Policy", "geolocation=(self), camera=(), microphone=()")
+        super().end_headers()
 
     def send_json(self, obj, code=200):
         body = json.dumps(obj, separators=(",", ":")).encode()
@@ -1056,6 +1145,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.redirect(f"https://{DOMAIN}:{PORT}{self.path}")
         u = urllib.parse.urlparse(self.path)
         q = urllib.parse.parse_qs(u.query)
+        if not spend(self.client_address[0], COSTS.get(u.path, 0)):
+            self.send_response(429)
+            self.send_header("Retry-After", "60")
+            body = json.dumps({"error": "Too many requests from your connection, please wait a minute."}).encode()
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
         try:
             if u.path == "/api/geocode":
                 text = q.get("q", [""])[0][:200].strip()
@@ -1231,7 +1329,25 @@ class DualServer(ThreadingHTTPServer):
     daemon_threads = True
 
     def finish_request(self, request, client_address):
-        # Runs in the per-connection thread: sniff first byte; 0x16 = TLS ClientHello.
+        # Runs in the per-connection thread. Limit simultaneous connections per visitor and in total.
+        global _total_conns
+        key, trusted = client_key(client_address[0])
+        with _abuse_lock:
+            if not trusted and (_conns.get(key, 0) >= MAX_CONN_PER_IP or _total_conns >= MAX_CONN_TOTAL):
+                return                                  # just close it
+            _conns[key] = _conns.get(key, 0) + 1
+            _total_conns += 1
+        try:
+            self._serve(request, client_address)
+        finally:
+            with _abuse_lock:
+                _total_conns -= 1
+                _conns[key] -= 1
+                if _conns[key] <= 0:
+                    del _conns[key]
+
+    def _serve(self, request, client_address):
+        # sniff first byte; 0x16 = TLS ClientHello
         try:
             request.settimeout(10)
             first = request.recv(1, socket.MSG_PEEK)
@@ -1241,7 +1357,7 @@ class DualServer(ThreadingHTTPServer):
                 handler = type("TLSHandler", (Handler,), {"is_tls": True})
             else:
                 handler = Handler
-            request.settimeout(60)
+            request.settimeout(30)                      # idle connections (slowloris) get dropped
             handler(request, client_address, self)
         except (ssl.SSLError, OSError):
             pass
