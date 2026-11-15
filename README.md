@@ -3,7 +3,7 @@
 A small self-hosted website that finds fuel stations in **France** — along a car trip or around a place —
 with their latest official prices and stock outages.
 
-- **Fuels:** E85 (Superéthanol), Diesel (Gazole), SP95-E10, SP95, SP98
+- **Fuels:** E85 (Superéthanol), Diesel (Gazole), SP95-E10, SP95, SP98, or "SP95 + E10" (whichever of the two is in stock and cheaper at each station)
 - **Trip mode:** enter a start, an end (and an optional stop). Stations within 1–20 km of the route are listed in
   driving order, with the **real detour time** (leave the route, refuel, come back), so stations on the wrong side of a dual
   carriageway show their true cost. Motorway service stations on the opposite carriageway are flagged and never suggested.

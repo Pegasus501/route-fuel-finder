@@ -57,6 +57,35 @@ def _config():
 
 TOMTOM_KEY = os.environ.get("TOMTOM_KEY") or _config().get("tomtom_key", "")
 
+# "SP95E10" = either SP95 or SP95-E10, whichever the station has in stock at the best price
+COMBINED = {"SP95E10": ("E10", "SP95")}
+FUEL_CHOICES = FUELS | set(COMBINED)
+
+
+def fuel_info(s, fuel):
+    if fuel not in COMBINED:
+        return s["fuels"].get(fuel)
+    opts = [(name, s["fuels"][name]) for name in COMBINED[fuel] if name in s["fuels"]]
+    if not opts:
+        return None
+
+    def rank(o):
+        f = o[1]
+        in_stock = f.get("price") is not None and not (f.get("out_since") and not f.get("maybe_restocked"))
+        try:
+            fresh = time.time() - datetime.fromisoformat(f["updated"]).timestamp() <= 7 * 86400
+        except (KeyError, TypeError, ValueError):
+            fresh = False
+        return (not in_stock, not fresh, f.get("price") if f.get("price") is not None else 99)
+
+    opts.sort(key=rank)
+    best = dict(opts[0][1], variant=opts[0][0])
+    if len(opts) > 1 and opts[1][1].get("price") is not None:
+        o = opts[1][1]
+        best["other"] = {"variant": opts[1][0], "price": o["price"],
+                         "out": bool(o.get("out_since") and not o.get("maybe_restocked"))}
+    return best
+
 _stations = {}          # id -> station dict
 _stations_loaded_at = 0.0
 _lock = threading.Lock()
@@ -605,7 +634,7 @@ def stations_near(nb, fuel):
         stations = list(_stations.values())
     out = []
     for s in stations:
-        f = s["fuels"].get(fuel)
+        f = fuel_info(s, fuel)
         if not f:
             continue
         d = crow_km(nb.lon, nb.lat, s["lon"], s["lat"])
@@ -640,7 +669,7 @@ def stations_for(trip, fuel, corridor_km):
     out = []
     total_km = trip.index.cum[-1]
     for s in stations:
-        f = s["fuels"].get(fuel)
+        f = fuel_info(s, fuel)
         if not f:
             continue
         n = trip.index.nearest(s["lon"], s["lat"], corridor_km)
@@ -813,7 +842,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "Trip expired, search again"}, 410)
                 if u.path == "/api/tolls":
                     fuel = q.get("fuel", ["E85"])[0]
-                    return self.send_json({"exits": toll_exits(trip, fuel if fuel in FUELS else "E85")})
+                    return self.send_json({"exits": toll_exits(trip, fuel if fuel in FUEL_CHOICES else "E85")})
                 if u.path == "/api/traffic":
                     if trip.traffic is None:
                         return self.send_json({"enabled": False})
@@ -836,7 +865,7 @@ class Handler(BaseHTTPRequestHandler):
                 if u.path == "/api/via":
                     return self.send_json(via_station_route(trip, q["id"][0]) or {"error": "Unknown station"})
                 fuel = q.get("fuel", ["E85"])[0]
-                if fuel not in FUELS:
+                if fuel not in FUEL_CHOICES:
                     return self.send_json({"error": "Unknown fuel"}, 400)
                 band = min(max(float(q.get("band", ["15"])[0]), 1), 25)
                 return self.send_json({"band": band, "stations": ideal_candidates(trip, fuel, band)})
@@ -859,7 +888,7 @@ class Handler(BaseHTTPRequestHandler):
         if not 2 <= len(pts) <= 6:
             return self.send_json({"error": "Need a start and an end"}, 400)
         fuel = q.get("fuel", ["E85"])[0]
-        if fuel not in FUELS:
+        if fuel not in FUEL_CHOICES:
             return self.send_json({"error": "Unknown fuel"}, 400)
         corridor = min(max(float(q.get("corridor", ["3"])[0]), 0.5), 25)
         trip = get_trip(pts)
@@ -874,7 +903,7 @@ class Handler(BaseHTTPRequestHandler):
         if not (-10 < lon < 12 and 40 < lat < 53):
             return self.send_json({"error": "Point outside France"}, 400)
         fuel = q.get("fuel", ["E85"])[0]
-        if fuel not in FUELS:
+        if fuel not in FUEL_CHOICES:
             return self.send_json({"error": "Unknown fuel"}, 400)
         radius = min(max(float(q.get("radius", ["10"])[0]), 1), 50)
         mode = "drive" if q.get("mode", ["crow"])[0] == "drive" else "crow"

@@ -138,7 +138,7 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
   <div class="side">
     <div class="card" id="formCard">
       <div class="fuels" id="fuels">
-        <button data-f="E85">E85</button><button data-f="Gazole" data-i18n="Diesel">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button>
+        <button data-f="E85">E85</button><button data-f="Gazole" data-i18n="Diesel">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button><button data-f="SP95E10" title="Show whichever of SP95 or SP95-E10 is cheaper at each station" data-i18n-title="Show whichever of SP95 or SP95-E10 is cheaper at each station">SP95 + E10</button>
       </div>
       <div class="tabs" id="modeTabs"><button data-m="trip" class="on" data-i18n="🚗 Trip">🚗 Trip</button><button data-m="near" data-i18n="📍 Around a place">📍 Around a place</button></div>
       <div id="tripPanel">
@@ -187,7 +187,7 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
 </div>
 <script>
 const $ = s => document.querySelector(s);
-const FUEL_NAMES = {E85: 'E85', Gazole: 'Diesel', E10: 'SP95-E10', SP95: 'SP95', SP98: 'SP98'};
+const FUEL_NAMES = {E85: 'E85', Gazole: 'Diesel', E10: 'SP95-E10', SP95: 'SP95', SP98: 'SP98', SP95E10: 'SP95 / E10'};
 const map = L.map('map').setView([46.6, 2.4], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap'}).addTo(map);
 let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortBy = 'along', selId = null, markerById = {};
@@ -271,6 +271,8 @@ const FR = {
   'Traffic jam': 'Bouchon', 'Road works': 'Travaux', 'Road closed': 'Route fermée', 'Slow traffic': 'Ralentissement',
   'with traffic…': 'avec trafic…', 'with traffic: <b>+{0} min</b> · trip {1}': 'avec trafic : <b>+{0} min</b> · trajet {1}',
   'quickest stop': 'arrêt le plus rapide', 'See on map': 'Voir sur la carte',
+  'Show whichever of SP95 or SP95-E10 is cheaper at each station': 'Affiche le moins cher entre SP95 et SP95-E10 dans chaque station',
+  '{0}: out of stock': '{0} : en rupture', 'also {0}: {1} €': 'aussi {0} : {1} €',
   'Price updated {0}': 'Prix mis à jour le {0}', 'Outage reported {0}': 'Rupture signalée le {0}', 'saves {0} € vs quickest stop': 'économise {0} € vs l\'arrêt le plus rapide',
   'costs {0} € more than quickest stop': 'coûte {0} € de plus que l\'arrêt le plus rapide',
 };
@@ -547,7 +549,7 @@ function statusTags(s) {
   return t.join('');
 }
 function popupHtml(s) {
-  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : t('no price')}</b> ${fuelName(fuel)}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
+  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : t('no price')}</b> ${fuelName(s.variant || fuel)}${otherPrice(s, ' · ')}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
     <div class="tags">${statusTags(s)}</div>
     <small>${mode === 'near' ? `${where(s)} · ${detourText(s.detour)}` : `${where(s)} · ${s.opposite ? t('not reachable in your direction') : detourText(s.detour)}${s.detour ? ` (${s.detour.km} km)` : ''}`}</small>
     ${mode === 'trip' && s.detour && !s.opposite ? `<div class="meta">${t('Trip with this stop: <b>{0}</b> instead of {1}', hm(lastData.duration_s + s.detour.s), hm(lastData.duration_s))}</div><div class="tags">${worthVsQuickest(s)}</div>` : ''}
@@ -567,7 +569,7 @@ function renderList() {
     <div class="st ${s.id === selId ? 'sel' : ''} ${isAvail(s) ? '' : 'na'}" data-id="${s.id}">
       <div>${title(s) ? `<div><b>${esc(title(s))}</b></div><div class="meta">${esc(s.address)}, ${esc(s.cp)} ${esc(s.city)}</div>`
                    : `<div><b>${esc(s.city)}</b> <span class="meta">${esc(s.cp)}</span></div><div class="meta">${esc(s.address)}</div>`}</div>
-      <div><div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>${shortDetour(s)}</div>
+      <div><div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>${s.variant ? `<div class="meta" style="text-align:right;font-weight:600">${fuelName(s.variant)}</div>` : ''}${shortDetour(s)}</div>
       <div class="tags">
         ${s === cheapest ? `<span class="tag cheap">${t('cheapest')}</span>` : ''}${s === nearest ? `<span class="tag near">${t(mode === 'near' ? 'closest' : 'smallest detour')}</span>` : ''}
         ${statusTags(s)}
@@ -581,7 +583,8 @@ function renderList() {
 function details(s) {
   const when = iso => new Date(iso).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
   const lines = [];
-  if (s.updated && s.price != null) lines.push(t('Price updated {0}', when(s.updated)));
+  if (s.updated && s.price != null) lines.push(t('Price updated {0}', when(s.updated)) + (s.variant ? ` · ${fuelName(s.variant)}` : ''));
+  if (s.other) lines.push(otherPrice(s, ''));
   if (s.out_since) lines.push(t('Outage reported {0}', when(s.out_since)));
   if (mode === 'trip') {
     if (s.opposite) lines.push(t('not reachable in your direction'));
@@ -688,7 +691,7 @@ function renderIdeal() {
     return `<div class="opt ${idealSel === s.id ? 'sel' : ''}" data-id="${s.id}">
       <div><div class="l">${label}</div><div class="n">${esc(title(s) || s.city)}</div>
         <div class="meta">${esc(s.city)} · ${where(s)}${off}</div></div>
-      <div class="r"><div class="big">${s.price.toFixed(3)} €</div>
+      <div class="r"><div class="big">${s.price.toFixed(3)} €${s.variant ? ` <span class="meta">${fuelName(s.variant)}</span>` : ''}</div>
         <div class="meta"><b>${mins(s.detour)}</b> · ${t('trip {0}', hm(base + s.detour.s))}</div>
         ${trafficLine(s)}
         ${i ? `<div class="meta"><span class="save">${t('saves {0} €', o.saving.toFixed(2))}</span> ${t('for {0} min more', o.extraMin)}</div>` : ''}</div>
@@ -795,7 +798,11 @@ function updatePip() {
   }, 60);
 }
 const isPip = () => $('#mapBox').classList.contains('pip');
-function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' €' : t('no price')}`; }
+function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' €' : t('no price')}${s.variant ? ' ' + fuelName(s.variant) : ''}`; }
+function otherPrice(s, sep) {
+  const o = s.other; if (!o) return '';
+  return `${sep}<span class="meta">${o.out ? t('{0}: out of stock', fuelName(o.variant)) : t('also {0}: {1} €', fuelName(o.variant), o.price.toFixed(3))}</span>`;
+}
 // In the mini-map a full popup would cover everything: show a one-line label and highlight the station in the list instead.
 map.on('popupopen', e => {
   if (!isPip()) return;
