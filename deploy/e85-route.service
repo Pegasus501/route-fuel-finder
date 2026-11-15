@@ -1,0 +1,18 @@
+# systemd *user* service. Install with:
+#   mkdir -p ~/.config/systemd/user && cp deploy/e85-route.service ~/.config/systemd/user/
+#   (edit the paths / DOMAIN below), then:
+#   systemctl --user daemon-reload && systemctl --user enable --now e85-route
+#   loginctl enable-linger $USER     # keep it running after logout / at boot
+[Unit]
+Description=Route fuel finder website
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 -u %h/e85-route/server.py
+# DOMAIN = your public hostname (only needed for HTTPS). ACME_PORT=80 needs the sysctl in the README.
+Environment=PORT=8085 ACME_PORT=80 DOMAIN=
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

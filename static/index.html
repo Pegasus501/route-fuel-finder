@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1f8a4c">
+<title>Route Fuel Finder</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+:root{--bg:#f6f7f5;--panel:#fff;--ink:#1c2321;--muted:#66706c;--line:#e2e5e2;--accent:#1f8a4c;--accent-ink:#fff;--warn:#b45309;--bad:#b91c1c;--chip:#eef3ef;--blue:#2563eb}
+@media (prefers-color-scheme:dark){:root{--bg:#121614;--panel:#1b201e;--ink:#e8ece9;--muted:#9aa49f;--line:#2c3330;--accent:#3fbf75;--accent-ink:#0b1a12;--warn:#f59e0b;--bad:#f87171;--chip:#24302a;--blue:#60a5fa}}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:14px 16px 4px}
+h1{margin:0;font-size:20px}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:13px}
+.layout{display:grid;grid-template-columns:420px 1fr;gap:12px;padding:12px 16px 16px;height:calc(100vh - 62px)}
+.side{display:flex;flex-direction:column;gap:10px;min-height:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:3px}
+.field{position:relative;margin-bottom:8px}
+.inrow{display:flex;gap:6px}
+input,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;min-width:0}
+.sugg{position:absolute;z-index:1000;left:0;right:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;margin-top:2px;box-shadow:0 6px 18px #0003;display:none}
+.sugg div{padding:9px 10px;cursor:pointer}
+.sugg div:hover,.sugg div.on{background:var(--chip)}
+.row{display:flex;gap:8px;align-items:end}
+.row>*{flex:1}
+button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
+.go{background:var(--accent);color:var(--accent-ink);font-weight:600;width:100%}
+.go:disabled{opacity:.6}
+.ghost{background:var(--chip);color:var(--ink);flex:0 0 auto;padding:10px 12px}
+.fuels{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.fuels button{padding:7px 12px;background:var(--chip);color:var(--ink);font-size:14px;font-weight:600}
+.fuels button.on{background:var(--accent);color:var(--accent-ink)}
+.tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--chip);border-radius:10px;padding:3px;margin-bottom:10px}
+.tabs button{padding:8px;background:transparent;color:var(--ink);font-weight:600;border-radius:8px}
+.tabs button.on{background:var(--panel);box-shadow:0 1px 3px #0002}
+.seg{display:flex;background:var(--chip);border-radius:8px;padding:2px}
+.seg button{flex:1;padding:8px 6px;background:transparent;color:var(--ink);font-size:13px;border-radius:6px;white-space:nowrap}
+.seg button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.picks{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+.pick{border:1px solid var(--line);border-radius:10px;padding:8px 10px;cursor:pointer;background:var(--bg)}
+.pick:hover{border-color:var(--accent)}
+.pick .k{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.pick .v{font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.pick .w{font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.list{overflow:auto;flex:1;min-height:120px;padding:0;display:flex;flex-direction:column}
+.st{padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer;display:grid;grid-template-columns:1fr auto;gap:2px 10px}
+.st:hover{background:var(--chip)}
+.st.sel{background:var(--chip);box-shadow:inset 3px 0 var(--accent)}
+.st.na{opacity:.55}
+.st.na .price{text-decoration:line-through}
+.price{font-size:20px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.price.best{color:var(--accent)}
+.meta{color:var(--muted);font-size:12px}
+.tags{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:3px}
+.tag{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--chip);white-space:nowrap}
+.tag.old{color:var(--warn)}
+.tag.bad{background:var(--bad);color:#fff}
+.tag.ok{color:var(--accent);font-weight:600}
+.tag.cheap{background:var(--accent);color:var(--accent-ink)}
+.tag.near{background:var(--blue);color:#fff}
+.nav a{font-size:12px;color:var(--accent);margin-left:8px;text-decoration:none;font-weight:600}
+.sortbar{display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--line);align-items:center;flex-wrap:wrap;position:sticky;top:0;background:var(--panel);z-index:1}
+.sortbar button{padding:5px 10px;font-size:13px;background:var(--chip);color:var(--ink)}
+.sortbar button.on{background:var(--accent);color:var(--accent-ink)}
+.sortbar label{display:flex;gap:4px;align-items:center;margin:0 0 0 auto;font-size:12px}
+.sortbar input{width:auto}
+#map{border-radius:12px;border:1px solid var(--line);min-height:300px}
+.err{color:var(--bad)}
+.note{font-size:12px;color:var(--muted);margin-top:8px}
+.pin{width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);background:var(--accent);border:2px solid #fff;box-shadow:0 1px 4px #0006;display:grid;place-items:center}
+.pin span{transform:rotate(45deg);color:#fff;font:700 9px system-ui}
+.pin.old{background:#9ca3af}
+.pin.na{background:#b91c1c;opacity:.7}
+.pin.best{background:#f59e0b}
+.pin.near{background:#2563eb}
+@media (max-width:860px){
+  .layout{grid-template-columns:1fr;height:auto}
+  #map{height:55vh}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>⛽ <span>Route</span> Fuel Finder</h1>
+  <div class="sub" id="feed">Official French fuel price &amp; stock data</div>
+</header>
+<div class="layout">
+  <div class="side">
+    <div class="card">
+      <div class="fuels" id="fuels">
+        <button data-f="E85">E85</button><button data-f="Gazole">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button>
+      </div>
+      <div class="tabs" id="modeTabs"><button data-m="trip" class="on">🚗 Trip</button><button data-m="near">📍 Around a place</button></div>
+      <div id="tripPanel">
+      <div class="field"><label>From</label>
+        <div class="inrow"><input id="from" placeholder="e.g. Paris" autocomplete="off"><button class="ghost" id="locate" title="Use my current location">📍</button></div>
+        <div class="sugg"></div></div>
+      <div class="field" id="viaWrap" style="display:none"><label>Via (optional)</label><input id="via" placeholder="Stop along the way" autocomplete="off"><div class="sugg"></div></div>
+      <div class="field"><label>To</label><input id="to" placeholder="e.g. Lyon" autocomplete="off"><div class="sugg"></div></div>
+      <div class="row">
+        <div><label>Max distance from route</label>
+          <select id="corridor"><option value="1">1 km</option><option value="2">2 km</option><option value="3" selected>3 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option></select></div>
+        <button class="ghost" id="swap" title="Swap start and end">⇅</button>
+        <button class="ghost" id="addVia" title="Add a stop">+ via</button>
+      </div>
+      </div>
+      <div id="nearPanel" style="display:none">
+        <div class="field"><label>Around</label>
+          <div class="inrow"><input id="center" placeholder="Address or town, or tap 📍" autocomplete="off"><button class="ghost" id="locate2" title="Use my current location">📍</button></div>
+          <div class="sugg"></div></div>
+        <div class="row">
+          <div style="flex:0 0 96px"><label>Radius</label>
+            <select id="radius"><option value="2">2 km</option><option value="5">5 km</option><option value="10" selected>10 km</option><option value="20">20 km</option><option value="30">30 km</option><option value="50">50 km</option></select></div>
+          <div><label>Measured</label>
+            <div class="seg" id="rmode"><button data-r="drive" class="on">By road</button><button data-r="crow">Vol d'oiseau</button></div></div>
+        </div>
+      </div>
+      <div style="margin-top:10px"><button class="go" id="go">Find stations</button></div>
+    </div>
+    <div class="card" id="summary" style="display:none"></div>
+    <div class="card list" id="listCard" style="display:none">
+      <div class="sortbar"><span class="meta">Sort:</span>
+        <button data-s="along" class="on">Along route</button><button data-s="price">Cheapest</button><button data-s="detour">Smallest detour</button>
+        <label><input type="checkbox" id="showNA" checked> show unavailable</label></div>
+      <div id="list"></div>
+    </div>
+  </div>
+  <div id="map"></div>
+</div>
+<script>
+const $ = s => document.querySelector(s);
+const FUEL_NAMES = {E85: 'E85', Gazole: 'Diesel', E10: 'SP95-E10', SP95: 'SP95', SP98: 'SP98'};
+const map = L.map('map').setView([46.6, 2.4], 6);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap'}).addTo(map);
+let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortBy = 'along', selId = null, markerById = {};
+let trip = null, gen = 0, fuel = 'E85', lastData = null, lastPts = null;
+const chosen = {from: null, via: null, to: null, center: null};
+let mode = 'trip', rmode = 'drive';
+function setMode(m) {
+  mode = m === 'near' ? 'near' : 'trip'; store.set('mode', mode);
+  document.querySelectorAll('#modeTabs button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
+  $('#tripPanel').style.display = mode === 'trip' ? '' : 'none';
+  $('#nearPanel').style.display = mode === 'near' ? '' : 'none';
+  document.querySelector('.sortbar [data-s="along"]').textContent = mode === 'trip' ? 'Along route' : 'Nearest';
+  document.querySelector('.sortbar [data-s="detour"]').style.display = mode === 'trip' ? '' : 'none';
+  if (mode === 'near' && sortBy === 'detour') sortBy = 'along';
+  document.querySelectorAll('.sortbar button').forEach(x => x.classList.toggle('on', x.dataset.s === sortBy));
+}
+function setRmode(r) {
+  rmode = r === 'crow' ? 'crow' : 'drive'; store.set('rmode', rmode);
+  document.querySelectorAll('#rmode button').forEach(b => b.classList.toggle('on', b.dataset.r === rmode));
+}
+const store = {get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }};
+
+// ---------- fuel chips
+function setFuel(f) {
+  fuel = FUEL_NAMES[f] ? f : 'E85';
+  document.querySelectorAll('#fuels button').forEach(b => b.classList.toggle('on', b.dataset.f === fuel));
+  store.set('fuel', fuel);
+}
+document.querySelectorAll('#fuels button').forEach(b => b.onclick = () => { setFuel(b.dataset.f); if (lastPts) search(); });
+document.querySelectorAll('#modeTabs button').forEach(b => b.onclick = () => { if (b.dataset.m !== mode) { setMode(b.dataset.m); clearResults(); } });
+document.querySelectorAll('#rmode button').forEach(b => b.onclick = () => { setRmode(b.dataset.r); if (lastPts && mode === 'near') search(); });
+function clearResults() {
+  gen++; lastPts = null; lastData = null; stations = [];
+  if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  markers.clearLayers(); $('#summary').style.display = 'none'; $('#listCard').style.display = 'none';
+}
+
+// ---------- autocomplete
+function setupAuto(key) {
+  const inp = $('#' + key), box = inp.closest('.field').querySelector('.sugg');
+  let t, items = [], idx = -1;
+  const render = () => {
+    box.innerHTML = items.map((it, i) => `<div class="${i === idx ? 'on' : ''}" data-i="${i}">${esc(it.label)}</div>`).join('');
+    box.style.display = items.length ? 'block' : 'none';
+  };
+  const pick = i => { chosen[key] = items[i]; inp.value = items[i].label; items = []; render(); };
+  inp.addEventListener('input', () => {
+    chosen[key] = null; clearTimeout(t);
+    const q = inp.value.trim();
+    if (q.length < 3) { items = []; return render(); }
+    t = setTimeout(async () => {
+      try { items = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json(); idx = -1; render(); } catch {}
+    }, 250);
+  });
+  inp.addEventListener('keydown', e => {
+    if (!items.length) { if (e.key === 'Enter') search(); return; }
+    if (e.key === 'ArrowDown') { idx = Math.min(idx + 1, items.length - 1); render(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { idx = Math.max(idx - 1, 0); render(); e.preventDefault(); }
+    else if (e.key === 'Enter') { pick(Math.max(idx, 0)); e.preventDefault(); }
+    else if (e.key === 'Escape') { items = []; render(); }
+  });
+  box.addEventListener('mousedown', e => { const d = e.target.closest('[data-i]'); if (d) { e.preventDefault(); pick(+d.dataset.i); } });
+  inp.addEventListener('blur', () => setTimeout(() => { items = []; render(); }, 150));
+}
+['from', 'via', 'to', 'center'].forEach(setupAuto);
+
+async function resolve(key) {
+  if (chosen[key]) return chosen[key];
+  const q = $('#' + key).value.trim();
+  if (!q) return null;
+  const r = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json();
+  if (!r.length) throw new Error(`Couldn't find "${q}"`);
+  chosen[key] = r[0]; $('#' + key).value = r[0].label;
+  return r[0];
+}
+
+// ---------- current location
+function locate(btn, key) {
+  if (!window.isSecureContext || !navigator.geolocation) {
+    showMsg('Your browser only shares your location with secure (https://) sites. Open the https:// address of this site to use 📍.', true);
+    return;
+  }
+  btn.textContent = '…';
+  navigator.geolocation.getCurrentPosition(async pos => {
+    const lon = pos.coords.longitude, lat = pos.coords.latitude;
+    let label = 'My location';
+    try { const r = await (await fetch(`/api/reverse?lon=${lon}&lat=${lat}`)).json(); if (r) label = 'My location · ' + r.label; } catch {}
+    chosen[key] = {lon, lat, label}; $('#' + key).value = label; btn.textContent = '📍';
+    if (key === 'center' || $('#to').value) search(); else $('#to').focus();
+  }, err => {
+    btn.textContent = '📍';
+    showMsg(err.code === 1 ? 'Location permission was refused. Allow location for this site in your browser settings.' : 'Could not get your location, try again outdoors or type your start.', true);
+  }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000});
+}
+$('#locate').onclick = () => locate($('#locate'), 'from');
+$('#locate2').onclick = () => locate($('#locate2'), 'center');
+
+$('#swap').onclick = () => {
+  [chosen.from, chosen.to] = [chosen.to, chosen.from];
+  const a = $('#from').value; $('#from').value = $('#to').value; $('#to').value = a;
+};
+$('#addVia').onclick = () => { $('#viaWrap').style.display = 'block'; $('#addVia').style.display = 'none'; $('#via').focus(); };
+$('#go').onclick = search;
+$('#showNA').onchange = () => { renderList(); drawMarkers(); };
+$('#corridor').onchange = () => { if (lastPts && mode === 'trip') search(); };
+$('#radius').onchange = () => { if (lastPts && mode === 'near') search(); };
+
+function showMsg(html, isErr) {
+  const sum = $('#summary'); sum.style.display = 'block';
+  sum.innerHTML = isErr ? `<span class="err">${esc(html)}</span>` : html;
+}
+
+// ---------- search
+async function search() {
+  const btn = $('#go'), my = ++gen;
+  btn.disabled = true; btn.textContent = 'Searching…';
+  showMsg(`<span class="meta">${mode === 'trip' ? 'Planning route and looking up stations…' : rmode === 'drive' ? 'Working out the area reachable by road…' : 'Looking up stations…'}</span>`);
+  try {
+    if (mode === 'near') {
+      const c = await resolve('center');
+      if (!c) throw new Error('Type an address or tap 📍 to use your location.');
+      const res = await fetch(`/api/nearby?lon=${c.lon.toFixed(5)}&lat=${c.lat.toFixed(5)}&radius=${$('#radius').value}&mode=${rmode}&fuel=${fuel}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      if (my !== gen) return;
+      lastPts = [c]; lastData = data; trip = data.trip;
+      stations = data.stations; stations.forEach(s => { if (s.drive !== undefined) s.detour = s.drive; });
+      store.set('lastNear', {center: c.label?.startsWith('My location') ? null : c, radius: $('#radius').value});
+      drawRoute(); drawMarkers(); renderAll();
+      fetchDetours(my);
+      return;
+    }
+    const from = await resolve('from'), to = await resolve('to'), via = await resolve('via');
+    if (!from || !to) throw new Error('Please enter a start and a destination.');
+    const pts = [from, via, to].filter(Boolean);
+    const res = await fetch(`/api/route?${pts.map(p => `p=${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join('&')}&corridor=${$('#corridor').value}&fuel=${fuel}`);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (my !== gen) return;
+    lastPts = pts; lastData = data; trip = data.trip;
+    stations = data.stations;
+    store.set('last', {from, to, via, corridor: $('#corridor').value});
+    drawRoute(); drawMarkers(); renderAll();
+    fetchDetours(my);
+  } catch (e) {
+    if (my === gen) showMsg(e.message || 'Something went wrong', true);
+  } finally { if (my === gen) { btn.disabled = false; btn.textContent = 'Find stations'; } }
+}
+
+// ---------- station status helpers
+function ageDays(iso) { return iso ? (Date.now() - new Date(iso)) / 864e5 : Infinity; }
+function ago(iso) {
+  const d = ageDays(iso);
+  if (d < 1 / 24) return Math.max(1, Math.round(d * 1440)) + ' min';
+  if (d < 1) return Math.round(d * 24) + ' h';
+  return Math.round(d) + ' day' + (Math.round(d) > 1 ? 's' : '');
+}
+const isOut = s => !!s.out_since && !s.maybe_restocked;
+const isAvail = s => !isOut(s) && !s.opposite && s.price != null;
+const isFresh = s => ageDays(s.updated) <= 7;
+function picks() {
+  const av = stations.filter(isAvail);
+  const fresh = av.filter(isFresh);
+  const cheapest = fresh.length ? fresh.reduce((a, b) => b.price < a.price || (b.price === a.price && (b.detour?.s ?? 1e9) < (a.detour?.s ?? 1e9)) ? b : a) : null;
+  const withD = av.filter(s => s.detour);
+  const nearest = withD.length ? withD.reduce((a, b) => b.detour.s < a.detour.s || (b.detour.s === a.detour.s && b.price < a.price) ? b : a) : null;
+  return {cheapest, nearest, pending: av.filter(s => s.detour === undefined).length, avail: av.length};
+}
+function detourText(d) {
+  if (mode === 'near') {
+    if (!d) return d === undefined ? 'by road…' : '';
+    return `${Math.max(1, Math.round(d.s / 60))} min · ${d.km} km by road`;
+  }
+  if (d === undefined) return 'detour…';
+  if (d === null) return 'detour ?';
+  const m = Math.round(d.s / 60);
+  return m < 1 ? 'no detour' : `+${m} min detour`;
+}
+
+// ---------- drawing
+function drawRoute() {
+  if (routeLayer) map.removeLayer(routeLayer);
+  if (mode === 'near') {
+    const c = lastPts[0], style = {color: '#2563eb', weight: 2, fillOpacity: .07};
+    routeLayer = lastData.area ? L.geoJSON(lastData.area, {style}).addTo(map) : L.circle([c.lat, c.lon], {radius: lastData.radius * 1000, ...style}).addTo(map);
+  } else routeLayer = L.polyline(lastData.route.map(c => [c[1], c[0]]), {color: '#2563eb', weight: 5, opacity: .75}).addTo(map);
+  map.fitBounds(routeLayer.getBounds(), {padding: [30, 30]});
+}
+function drawMarkers() {
+  markers.clearLayers(); markerById = {};
+  lastPts.forEach((p, i, arr) =>
+    L.circleMarker([p.lat, p.lon], {radius: 7, color: '#fff', weight: 2, fillColor: mode === 'near' ? '#2563eb' : i === 0 ? '#16a34a' : i === arr.length - 1 ? '#dc2626' : '#6b7280', fillOpacity: 1})
+      .bindTooltip(esc(p.label)).addTo(markers));
+  const {cheapest, nearest} = picks();
+  const showNA = $('#showNA').checked;
+  stations.forEach(s => {
+    if (!showNA && !isAvail(s)) return;
+    const cls = !isAvail(s) ? 'na' : s === cheapest ? 'best' : s === nearest ? 'near' : !isFresh(s) ? 'old' : '';
+    const label = s.price != null ? s.price.toFixed(2) : '✕';
+    const m = L.marker([s.lat, s.lon], {zIndexOffset: cls === 'best' || cls === 'near' ? 1000 : cls === 'na' ? -500 : 0,
+      icon: L.divIcon({className: '', html: `<div class="pin ${cls}"><span>${label}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
+      .bindPopup(() => popupHtml(s)).on('click', () => select(s.id, false)).addTo(markers);
+    markerById[s.id] = m;
+  });
+}
+function renderAll() { renderSummary(); renderList(); }
+
+function where(s) { return mode === 'near' ? `${s.crow_km.toFixed(1)} km away` : `km ${Math.round(s.along_km)}`; }
+function renderSummary() {
+  if (mode === 'near') return renderNearSummary();
+  const d = lastData, km = Math.round(d.distance_m / 1000), h = Math.floor(d.duration_s / 3600), mn = Math.round(d.duration_s % 3600 / 60);
+  const {cheapest, nearest, pending, avail} = picks();
+  const out = stations.filter(isOut).length, opp = stations.filter(s => s.opposite && !isOut(s)).length;
+  const pick = (k, s, v) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${k}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''} · ${where(s)}</div></div>`
+                              : `<div class="pick"><div class="k">${k}</div><div class="v">–</div><div class="w">${k === 'Smallest detour' && pending ? 'computing…' : 'none available'}</div></div>`;
+  $('#summary').style.display = 'block';
+  $('#summary').innerHTML = `<b>${avail}</b> ${FUEL_NAMES[fuel]} station${avail === 1 ? '' : 's'} available within ${$('#corridor').value} km
+    <div class="meta">${km} km · ${h} h ${String(mn).padStart(2, '0')}${out ? ` · <span style="color:var(--bad)">${out} out of stock</span>` : ''}${opp ? ` · ${opp} on the other carriageway` : ''}</div>
+    <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
+      ${pick('Smallest detour', nearest, nearest ? detourText(nearest.detour).replace(' detour', '') + (pending ? ' <span class="meta">…</span>' : '') : '')}</div>
+    ${pending ? `<div class="note">Calculating real detours: ${avail - pending}/${avail}</div>` : ''}`;
+  $('#summary').querySelectorAll('.pick[data-id]').forEach(p => p.onclick = () => select(p.dataset.id, true));
+  $('#listCard').style.display = stations.length ? 'flex' : 'none';
+}
+function renderNearSummary() {
+  const {cheapest, nearest, pending, avail} = picks();
+  const out = stations.filter(isOut).length;
+  const pick = (k, s, v) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${k}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''}</div></div>`
+                              : `<div class="pick"><div class="k">${k}</div><div class="v">–</div><div class="w">${k === 'Closest' && pending ? 'computing…' : 'none available'}</div></div>`;
+  $('#summary').style.display = 'block';
+  $('#summary').innerHTML = `<b>${avail}</b> ${FUEL_NAMES[fuel]} station${avail === 1 ? '' : 's'} available within ${lastData.radius} km ${lastData.mode === 'drive' ? 'by road' : "à vol d'oiseau"}
+    <div class="meta">around ${esc(lastPts[0].label)}${out ? ` · <span style="color:var(--bad)">${out} out of stock</span>` : ''}</div>
+    <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
+      ${pick('Closest', nearest, nearest ? `${Math.max(1, Math.round(nearest.detour.s / 60))} min <span class="meta">${nearest.detour.km} km</span>` : '')}</div>
+    ${pending ? `<div class="note">Calculating road distances: ${avail - pending}/${avail}</div>` : ''}`;
+  $('#summary').querySelectorAll('.pick[data-id]').forEach(p => p.onclick = () => select(p.dataset.id, true));
+  $('#listCard').style.display = stations.length ? 'flex' : 'none';
+}
+
+function title(s) {
+  const b = s.brand, n = s.name;
+  if (b && n && !n.toLowerCase().includes(b.toLowerCase())) return `${b} – ${n}`;
+  return n || b || '';
+}
+function navLinks(s) {
+  const t = title(s);
+  // With a business name, the apps open the station's own place card instead of a bare address pin.
+  const g = t ? encodeURIComponent(`${t}, ${s.address}, ${s.cp} ${s.city}`) : `${s.lat},${s.lon}`;
+  const w = t ? `q=${encodeURIComponent(t + ' ' + s.city)}&ll=${s.lat},${s.lon}` : `ll=${s.lat},${s.lon}`;
+  return `<a href="https://waze.com/ul?${w}&navigate=yes" target="_blank" rel="noopener">Waze</a>` +
+         `<a href="https://www.google.com/maps/search/?api=1&query=${g}" target="_blank" rel="noopener">Maps</a>`;
+}
+function statusTags(s) {
+  const t = [];
+  if (isOut(s)) t.push(`<span class="tag bad">OUT OF STOCK · ${ago(s.out_since)}</span>`);
+  else if (s.maybe_restocked) t.push(`<span class="tag old">outage reported ${ago(s.out_since)} ago, price updated since</span>`);
+  if (s.opposite) t.push('<span class="tag bad">other side of motorway</span>');
+  if (!isOut(s) && s.price != null) t.push(`<span class="tag ${isFresh(s) ? 'ok' : 'old'}">${isFresh(s) ? '✓ ' : '⚠ '}price ${ago(s.updated)} old</span>`);
+  return t.join('');
+}
+function popupHtml(s) {
+  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : 'no price'}</b> ${FUEL_NAMES[fuel]}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
+    <div class="tags">${statusTags(s)}</div>
+    <small>${mode === 'near' ? `${where(s)} · ${detourText(s.detour)}` : `km ${Math.round(s.along_km)} on route · ${s.opposite ? 'not reachable in your direction' : detourText(s.detour)}${s.detour ? ` (${s.detour.km} km)` : ''}`}</small>
+    <div class="nav" style="margin-top:4px">${navLinks(s)}</div>`;
+}
+
+function renderList() {
+  const {cheapest, nearest} = picks();
+  const rank = s => isAvail(s) ? (isFresh(s) ? 0 : 1) : 2;
+  const cmp = {
+    along: mode === 'near' ? (a, b) => (a.detour ? a.detour.s : 1e9) - (b.detour ? b.detour.s : 1e9) || a.crow_km - b.crow_km : (a, b) => a.along_km - b.along_km,
+    price: (a, b) => rank(a) - rank(b) || (a.price ?? 99) - (b.price ?? 99),
+    detour: (a, b) => (isAvail(b) - isAvail(a)) || (a.detour ? a.detour.s : 1e9) - (b.detour ? b.detour.s : 1e9) || a.off_route_km - b.off_route_km,
+  }[sortBy];
+  const showNA = $('#showNA').checked;
+  $('#list').innerHTML = stations.filter(s => showNA || isAvail(s)).sort(cmp).map(s => `
+    <div class="st ${s.id === selId ? 'sel' : ''} ${isAvail(s) ? '' : 'na'}" data-id="${s.id}">
+      <div>${title(s) ? `<div><b>${esc(title(s))}</b></div><div class="meta">${esc(s.address)}, ${esc(s.cp)} ${esc(s.city)}</div>`
+                   : `<div><b>${esc(s.city)}</b> <span class="meta">${esc(s.cp)}</span></div><div class="meta">${esc(s.address)}</div>`}</div>
+      <div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>
+      <div class="tags">
+        ${s === cheapest ? '<span class="tag cheap">cheapest</span>' : ''}${s === nearest ? `<span class="tag near">${mode === 'near' ? 'closest' : 'smallest detour'}</span>` : ''}
+        ${statusTags(s)}
+        <span class="tag">${where(s)}</span>
+        ${s.opposite || !detourText(s.detour) ? '' : `<span class="tag">${detourText(s.detour)}</span>`}
+        ${s.motorway ? '<span class="tag">motorway</span>' : ''}${s.h24 ? '<span class="tag">24/7 card</span>' : ''}
+        <span class="nav" style="margin-left:auto">${navLinks(s)}</span>
+      </div></div>`).join('') || '<div class="note" style="padding:12px">No stations to show.</div>';
+}
+$('#list').addEventListener('click', e => { if (e.target.closest('a')) return; const d = e.target.closest('[data-id]'); if (d) select(d.dataset.id, true); });
+document.querySelectorAll('.sortbar button').forEach(b => b.onclick = () => {
+  sortBy = b.dataset.s; document.querySelectorAll('.sortbar button').forEach(x => x.classList.toggle('on', x === b)); renderList();
+});
+function select(id, pan) {
+  selId = id; renderList();
+  const m = markerById[id];
+  if (m && pan) { map.setView(m.getLatLng(), Math.max(map.getZoom(), 14)); m.openPopup(); if (innerWidth < 860) $('#map').scrollIntoView({behavior: 'smooth'}); }
+  else document.querySelector(`.st[data-id="${id}"]`)?.scrollIntoView({block: 'nearest'});
+}
+
+// ---------- progressive detour calculation
+async function fetchDetours(my) {
+  const queue = stations.filter(s => s.detour === undefined && !s.opposite)
+    .sort((a, b) => (isAvail(b) - isAvail(a)) || (mode === 'near' ? a.crow_km - b.crow_km : a.off_route_km - b.off_route_km));
+  if (mode === 'near') queue.splice(80).forEach(s => s.detour = null);   // road distance only for the 80 nearest
+  const byId = Object.fromEntries(stations.map(s => [s.id, s]));
+  let redraw = null;
+  const worker = async () => {
+    while (queue.length && my === gen) {
+      const batch = queue.splice(0, 6);
+      try {
+        const r = await (await fetch(`/api/detours?trip=${encodeURIComponent(trip)}&ids=${batch.map(s => s.id).join(',')}`)).json();
+        if (my !== gen || r.error) return;
+        for (const [id, d] of Object.entries(r)) if (byId[id]) byId[id].detour = d;
+      } catch { batch.forEach(s => s.detour = null); }
+      clearTimeout(redraw);
+      redraw = setTimeout(() => { if (my === gen) { renderAll(); drawMarkers(); } }, 150);
+    }
+  };
+  await Promise.all([worker(), worker()]);
+  if (my === gen) { renderAll(); drawMarkers(); }
+}
+
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
+
+// ---------- init
+setFuel(store.get('fuel') || 'E85');
+fetch('/api/status').then(r => r.json()).then(s => {
+  if (s.feed_updated) $('#feed').textContent = `Official government prices & stock outages · refreshed ${new Date(s.feed_updated * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+}).catch(() => {});
+setRmode(store.get('rmode') || 'drive');
+setMode(store.get('mode') || 'trip');
+const lastNear = store.get('lastNear');
+if (lastNear) { if (lastNear.center) { chosen.center = lastNear.center; $('#center').value = lastNear.center.label; } $('#radius').value = lastNear.radius || '10'; }
+const last = store.get('last') || store.get('e85-last');
+if (last) {
+  Object.assign(chosen, {from: last.from, to: last.to, via: last.via});
+  $('#from').value = last.from?.label || ''; $('#to').value = last.to?.label || '';
+  if (last.via) { $('#via').value = last.via.label; $('#viaWrap').style.display = 'block'; $('#addVia').style.display = 'none'; }
+  $('#corridor').value = last.corridor || '3';
+}
+</script>
+</body>
+</html>
