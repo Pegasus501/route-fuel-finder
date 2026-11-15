@@ -119,6 +119,12 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .pin.na{background:#b91c1c;opacity:.7}
 .pin.best{background:#f59e0b}
 .pin.near{background:#2563eb}
+.st{scroll-margin-top:110px}
+body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
+.pin.selp{outline:3px solid #f59e0b;outline-offset:1px;transform:rotate(-45deg) scale(1.2)}
+.st .more{grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:13px;display:flex;flex-direction:column;gap:4px;cursor:default}
+.st .more .acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
+.seemap{background:var(--accent);color:var(--accent-ink);padding:8px 14px;font-weight:600;font-size:14px}
 
 </style>
 </head>
@@ -264,7 +270,8 @@ const FR = {
   ' (toll check in progress…)': ' (vérification des péages en cours…)', '. Tap an option to see its path.': '. Touchez une option pour voir son trajet.',
   'Traffic jam': 'Bouchon', 'Road works': 'Travaux', 'Road closed': 'Route fermée', 'Slow traffic': 'Ralentissement',
   'with traffic…': 'avec trafic…', 'with traffic: <b>+{0} min</b> · trip {1}': 'avec trafic : <b>+{0} min</b> · trajet {1}',
-  'quickest stop': 'arrêt le plus rapide', 'saves {0} € vs quickest stop': 'économise {0} € vs l\'arrêt le plus rapide',
+  'quickest stop': 'arrêt le plus rapide', 'See on map': 'Voir sur la carte',
+  'Price updated {0}': 'Prix mis à jour le {0}', 'Outage reported {0}': 'Rupture signalée le {0}', 'saves {0} € vs quickest stop': 'économise {0} € vs l\'arrêt le plus rapide',
   'costs {0} € more than quickest stop': 'coûte {0} € de plus que l\'arrêt le plus rapide',
 };
 function t(en, ...args) {
@@ -388,7 +395,7 @@ async function search() {
       if (data.error) throw new Error(t(data.error));
       if (my !== gen) return;
       clearIdeal();
-      lastPts = [c]; lastData = data; trip = data.trip;
+      lastPts = [c]; lastData = data; trip = data.trip; selId = null;
       stations = data.stations; stations.forEach(s => { if (s.drive !== undefined) s.detour = s.drive; });
       store.set('lastNear', {center: c.me ? null : c, radius: $('#radius').value});
       drawRoute(); drawMarkers(); renderAll(); updatePip();
@@ -402,7 +409,7 @@ async function search() {
     const data = await res.json();
     if (data.error) throw new Error(t(data.error));
     if (my !== gen) return;
-    lastPts = pts; lastData = data; trip = data.trip;
+    lastPts = pts; lastData = data; trip = data.trip; selId = null;
     stations = data.stations;
     store.set('last', {from, to, via, corridor: $('#corridor').value});
     clearIdeal();
@@ -456,6 +463,7 @@ function drawRoute() {
   map.fitBounds(routeLayer.getBounds(), {padding: [30, 30]});
 }
 function drawMarkers() {
+  const openId = map._popup && map._popup.isOpen() ? map._popup._source?.stationId : null;
   markers.clearLayers(); markerById = {};
   lastPts.forEach((p, i, arr) =>
     L.circleMarker([p.lat, p.lon], {radius: 7, color: '#fff', weight: 2, fillColor: mode === 'near' ? '#2563eb' : i === 0 ? '#16a34a' : i === arr.length - 1 ? '#dc2626' : '#6b7280', fillOpacity: 1})
@@ -466,13 +474,16 @@ function drawMarkers() {
     if (!showNA && !isAvail(s)) return;
     const cls = !isAvail(s) ? 'na' : s === cheapest ? 'best' : s === nearest ? 'near' : !isFresh(s) ? 'old' : '';
     const label = s.price != null ? s.price.toFixed(2) : '✕';
-    const m = L.marker([s.lat, s.lon], {zIndexOffset: cls === 'best' || cls === 'near' ? 1000 : cls === 'na' ? -500 : 0,
-      icon: L.divIcon({className: '', html: `<div class="pin ${cls}"><span>${label}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
-      .bindPopup(() => popupHtml(s)).bindTooltip(tipText(s), {direction: 'top', offset: [0, -30]}).on('click', () => select(s.id, false)).addTo(markers);
+    const sel = s.id === selId;
+    const m = L.marker([s.lat, s.lon], {zIndexOffset: sel ? 3000 : cls === 'best' || cls === 'near' ? 1000 : cls === 'na' ? -500 : 0,
+      icon: L.divIcon({className: '', html: `<div class="pin ${cls} ${sel ? 'selp' : ''}"><span>${label}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
+      .bindPopup(() => popupHtml(s)).bindTooltip(tipText(s), {direction: 'top', offset: [0, -30]}).addTo(markers);
     m.stationId = s.id;
     pipAware(m);
     markerById[s.id] = m;
   });
+  const keep = markerById[openId] || (isPip() && markerById[selId]);
+  if (keep) isPip() ? keep.openTooltip() : keep.openPopup();
 }
 function renderAll() { renderSummary(); renderList(); renderIdeal(); }
 
@@ -564,18 +575,56 @@ function renderList() {
         ${s.opposite || !detourText(s.detour) || mode === 'trip' ? '' : `<span class="tag">${detourText(s.detour)}</span>`}
         ${mode === 'trip' && exitsToll(s) && s.detour ? worthVsQuickest(s) : ''}
         ${s.motorway ? `<span class="tag">${t('motorway')}</span>` : ''}${s.h24 ? `<span class="tag">${t('24/7 card')}</span>` : ''}
-        <span class="nav" style="margin-left:auto">${navLinks(s)}</span>
-      </div></div>`).join('') || `<div class="note" style="padding:12px">${t('No stations to show.')}</div>`;
+        ${s.id === selId ? '' : `<span class="nav" style="margin-left:auto">${navLinks(s)}</span>`}
+      </div>${s.id === selId ? details(s) : ''}</div>`).join('') || `<div class="note" style="padding:12px">${t('No stations to show.')}</div>`;
 }
-$('#list').addEventListener('click', e => { if (e.target.closest('a')) return; const d = e.target.closest('[data-id]'); if (d) select(d.dataset.id, true); });
+function details(s) {
+  const when = iso => new Date(iso).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
+  const lines = [];
+  if (s.updated && s.price != null) lines.push(t('Price updated {0}', when(s.updated)));
+  if (s.out_since) lines.push(t('Outage reported {0}', when(s.out_since)));
+  if (mode === 'trip') {
+    if (s.opposite) lines.push(t('not reachable in your direction'));
+    else if (s.detour) {
+      lines.push(`${detourText(s.detour)} (${s.detour.km} km)`);
+      lines.push(t('Trip with this stop: <b>{0}</b> instead of {1}', hm(lastData.duration_s + s.detour.s), hm(lastData.duration_s)));
+      if (traffic && trafficVia[s.id] != null) lines.push(t('with traffic: <b>+{0} min</b> · trip {1}', Math.round(trafficVia[s.id] / 60), hm(traffic.duration_s + trafficVia[s.id])));
+    }
+  } else if (s.detour) lines.push(detourText(s.detour));
+  const worth = mode === 'trip' && !exitsToll(s) ? worthVsQuickest(s) : '';
+  return `<div class="more">${lines.map(l => `<div>${l}</div>`).join('')}${worth ? `<div class="tags">${worth}</div>` : ''}
+    <div class="acts"><button class="seemap" data-see="${s.id}">🗺 ${t('See on map')}</button><span class="nav">${navLinks(s)}</span></div></div>`;
+}
+$('#list').addEventListener('click', e => {
+  if (e.target.closest('a')) return;
+  const see = e.target.closest('[data-see]');
+  if (see) return seeOnMap(see.dataset.see);
+  if (e.target.closest('.more')) return;
+  const d = e.target.closest('[data-id]'); if (!d) return;
+  if (d.dataset.id === selId) { selId = null; renderList(); drawMarkers(); return; }   // tap again to collapse
+  select(d.dataset.id, false);
+});
 document.querySelectorAll('.sortbar button').forEach(b => b.onclick = () => {
   sortBy = b.dataset.s; document.querySelectorAll('.sortbar button').forEach(x => x.classList.toggle('on', x === b)); renderList();
 });
+// pan: true = also open the full popup (from the map / summary); false = expand in the list and just point the map at it
 function select(id, pan) {
-  selId = id; renderList();
-  const m = markerById[id];
-  if (m && pan) { showMap(); map.setView(m.getLatLng(), Math.max(map.getZoom(), 14)); isPip() ? m.openTooltip() : m.openPopup(); }
-  else document.querySelector(`.st[data-id="${id}"]`)?.scrollIntoView({block: isPip() ? 'center' : 'nearest', behavior: 'smooth'});
+  selId = id; renderList(); drawMarkers();
+  focusMarker(id, pan);
+  document.querySelector(`.st[data-id="${id}"]`)?.scrollIntoView({block: isPip() ? 'start' : 'nearest', behavior: 'smooth'});
+}
+function focusMarker(id, popup) {
+  const m = markerById[id] || altLayer.getLayers().find(x => x.stationId === id);
+  if (!m) return;
+  showMap();
+  map.setView(m.getLatLng(), Math.max(map.getZoom(), 13));
+  if (popup && !isPip()) m.openPopup(); else m.openTooltip();
+}
+function seeOnMap(id) {
+  if (landscape.matches) return focusMarker(id, true);
+  pipClosed = false;
+  $('#mapSlot').scrollIntoView({behavior: 'smooth', block: 'center'});
+  setTimeout(() => focusMarker(id, true), 700);
 }
 
 function hm(sec) { const m = Math.round(sec / 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; }
@@ -739,6 +788,7 @@ function updatePip() {
   box.classList.toggle('pip', want);
   box.classList.toggle('hidden', want && pipClosed);
   $('#pipShow').style.display = want && pipClosed ? 'block' : 'none';
+  document.body.classList.toggle('haspip', want && !pipClosed);
   if (was !== want) setTimeout(() => {
     map.invalidateSize();
     if (want && routeLayer && !selId) map.fitBounds(routeLayer.getBounds(), {padding: [10, 10]});
@@ -755,7 +805,9 @@ map.on('popupopen', e => {
 // Replace Leaflet's "click opens popup" with: full map -> popup, mini-map -> one-line label (no panning).
 function pipAware(m) {
   m.off('click', m._openPopup);
-  m.on('click', () => { if (isPip()) { m.openTooltip(); if (m.stationId) select(m.stationId, false); } else m.openPopup(); });
+  m.on('click', () => { if (m.stationId) { selId = m.stationId; renderList(); drawMarkers(); } const mk = markerById[m.stationId] || m;
+    if (isPip()) mk.openTooltip(); else mk.openPopup();
+    document.querySelector(`.st[data-id="${m.stationId}"]`)?.scrollIntoView({block: isPip() ? 'start' : 'nearest', behavior: 'smooth'}); });
 }
 function showMap() { if (pipClosed) { pipClosed = false; updatePip(); } }
 new IntersectionObserver(([e]) => { slotVisible = e.intersectionRatio > 0.25; updatePip(); }, {threshold: [0, 0.25, 0.5, 1]}).observe($('#mapSlot'));
