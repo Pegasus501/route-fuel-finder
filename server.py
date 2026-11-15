@@ -26,7 +26,7 @@ import xml.etree.ElementTree as ET
 import zipfile
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
@@ -105,6 +105,8 @@ def parse_feed(zip_bytes):
                 if ru.get("type") == "definitive" and not price_is_newer:
                     continue                      # station no longer sells this fuel
                 if ru.get("type") == "temporaire":
+                    if not price_is_newer and since and since < (datetime.now(PARIS) - timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S"):
+                        continue                  # "temporary" outage for over a month: effectively not sold here
                     info["out_since"] = iso(since)
                     info["maybe_restocked"] = price_is_newer
             if info:
@@ -648,6 +650,7 @@ def stations_for(trip, fuel, corridor_km):
         opposite = s["motorway"] and n["left"] and n["off_km"] < 1.0 and n["speed_kmh"] > 80
         st = station_view(s, f)
         st.update(off_route_km=round(n["off_km"], 2), along_km=round(n["along_km"], 1), opposite=opposite,
+                  at_s=round(trip.index.point_at(n["along_km"])[2]),
                   pct=round(n["along_km"] / total_km, 4) if total_km else 0)
         if s["id"] in trip.detours:
             st["detour"] = trip.detours[s["id"]]
