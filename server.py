@@ -760,6 +760,9 @@ def stations_for(trip, fuel, corridor_km):
         opposite = s["motorway"] and n["left"] and n["off_km"] < 1.0 and n["speed_kmh"] > 80
         st = view()
         st.update(off_route_km=round(n["off_km"], 2), along_km=round(n["along_km"], 1), opposite=opposite,
+                  # rough distance from the start until the exact road distance (detour "to_km") is known:
+                  # along the route, then off it (a station behind the start projects to along_km = 0)
+                  from_start_km=round(n["along_km"] + n["off_km"], 1),
                   at_s=round(trip.index.point_at(n["along_km"])[2]),
                   pct=round(n["along_km"] / total_km, 4) if total_km else 0)
         if s["id"] in trip.detours:
@@ -767,6 +770,24 @@ def stations_for(trip, fuel, corridor_km):
         out.append(st)
     out.sort(key=lambda s: s["along_km"])
     return out
+
+
+def road_km_to(coords, dist_m, lon, lat):
+    """Road distance (km) from the start of a route to the point of it closest to (lon, lat).
+    Scaled so the whole polyline length matches the router's distance."""
+    if not coords or len(coords) < 2:
+        return None
+    kx = 111.320 * math.cos(math.radians(lat))
+    cum, best, best_i = [0.0], None, 0
+    for i in range(1, len(coords)):
+        a, b = coords[i - 1], coords[i]
+        cum.append(cum[-1] + math.hypot((b[0] - a[0]) * kx, (b[1] - a[1]) * 110.574))
+    for i, c in enumerate(coords):
+        d = (c[0] - lon) ** 2 * kx * kx + (c[1] - lat) ** 2 * 110.574 ** 2
+        if best is None or d < best:
+            best, best_i = d, i
+    scale = (dist_m / 1000) / cum[-1] if cum[-1] > 0 and dist_m else 1.0
+    return round(cum[best_i] * scale, 1)
 
 
 def compute_detour(trip, sid):
@@ -778,7 +799,8 @@ def compute_detour(trip, sid):
     if s is None:
         return None
     dur, dist, coords = via_route(points_via(trip, s))
-    res = {"s": max(0, round(dur - trip.route["duration"])), "km": round(max(0.0, (dist - trip.route["distance"]) / 1000), 1)}
+    res = {"s": max(0, round(dur - trip.route["duration"])), "km": round(max(0.0, (dist - trip.route["distance"]) / 1000), 1),
+           "to_km": road_km_to(coords, dist, s["lon"], s["lat"])}
     trip.detour_geom[sid] = simplify(coords, 1500)
     trip.detours[sid] = res
     return res

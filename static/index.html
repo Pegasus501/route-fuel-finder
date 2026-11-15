@@ -178,6 +178,9 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
       <div class="row">
         <div><label data-i18n="Max added time">Max added time</label>
           <select id="detourMax"><option value="1">+1 min</option><option value="2">+2 min</option><option value="5" selected>+5 min</option><option value="10">+10 min</option><option value="15">+15 min</option><option value="20">+20 min</option><option value="30">+30 min</option></select></div>
+        <div style="flex:0 0 104px"><label data-i18n="Max km from start">Max km from start</label>
+          <input type="number" id="kmMax" min="1" step="10" placeholder="no limit" data-i18n-ph="no limit" inputmode="numeric"
+            title="Only show stations within this many km of driving from the start" data-i18n-title="Only show stations within this many km of driving from the start"></div>
         <button class="ghost" id="swap" title="Swap start and end" data-i18n-title="Swap start and end">⇅</button>
         <button class="ghost" id="addVia" title="Add a stop" data-i18n-title="Add a stop" data-i18n="+ via">+ via</button>
       </div>
@@ -222,6 +225,9 @@ const unitOf = s => s && s.ev ? '€/kWh' : '€/L';
 const DEFAULT_CHAINS = ['Lidl', 'Aldi', "McDonald's", 'Leclerc', 'Intermarché', 'Super U'];
 let evChains = null, evChainsSel = null;
 const detourLimit = () => +$('#detourMax').value || 5;
+const kmLimit = () => { const v = parseFloat($('#kmMax').value); return v > 0 ? v : 0; };
+// km driven from the start to reach a station: exact road distance once its detour is known, else an estimate
+const fromStart = s => s.detour && s.detour.to_km != null ? s.detour.to_km : (s.from_start_km ?? s.along_km);
 const map = L.map('map').setView([46.6, 2.4], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap'}).addTo(map);
 let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortBy = 'along', selId = null, markerById = {};
@@ -288,7 +294,8 @@ const FR = {
   '{0} day': '{0} jour', '{0} days': '{0} jours',
   'by road…': 'par la route…', '{0} min · {1} km by road': '{0} min · {1} km par la route',
   'detour…': 'détour…', 'detour ?': 'détour ?', 'no detour': 'pas de détour', '+{0} min detour': '+{0} min de détour',
-  '{0} km away': 'à {0} km', '{0} km from start': '{0} km du départ',
+  '{0} km away': 'à {0} km', 'Max km from start': 'Km max du départ', 'no limit': 'illimité',
+  'Only show stations within this many km of driving from the start': 'Seulement les stations à moins de ce nombre de km de route depuis le départ', '{0} km from start': '{0} km du départ',
   '<b>{0}</b> {1} station available within {2} km': '<b>{0}</b> station {1} disponible à moins de {2} km',
   '<b>{0}</b> {1} stations available within {2} km': '<b>{0}</b> stations {1} disponibles à moins de {2} km',
   '{0} without traffic': '{0} sans trafic', '{0} out of stock': '{0} en rupture', '{0} on the other carriageway': '{0} sur la voie opposée',
@@ -324,6 +331,7 @@ const FR = {
   'Only these chains (typical price per kWh):': 'Seulement ces enseignes (prix habituel au kWh) :', 'Hide stations with unknown price': 'Masquer les stations au prix inconnu',
   'Max added time': 'Temps ajouté max', 'charge': 'recharge', 'car max': 'max voiture',
   '<b>{0}</b> {1} station within +{2} min of added time': '<b>{0}</b> station {1} à moins de +{2} min de temps ajouté',
+  ', in the first {0} km': ', dans les {0} premiers km',
   '<b>{0}</b> {1} stations within +{2} min of added time': '<b>{0}</b> stations {1} à moins de +{2} min de temps ajouté',
   'OUT OF SERVICE · {0}': 'HORS SERVICE · {0}', '{0}/{1} free': '{0}/{1} libres', 'all busy ({0}/{1})': 'tout occupé ({0}/{1})',
   'availability unknown': 'dispo inconnue', 'updated {0} ago': 'mis à jour il y a {0}', 'price unknown': 'prix inconnu', 'free': 'gratuit',
@@ -376,6 +384,8 @@ function fuelParams() { return isEV() ? `fuel=EV&minkw=${$('#minkw').value}&plug
 function passesFilters(s) {
   const pm = parseFloat($('#priceMax').value);
   if (pm > 0 && s.price != null && s.price > pm) return false;
+  const km = kmLimit();
+  if (km && mode === 'trip' && fromStart(s) != null && fromStart(s) > km) return false;   // only stations within that distance
   if (s.ev) {
     if ($('#hideUnknown').checked && s.price == null) return false;
     if ($('#onlyChains').checked && !(evChainsSel || new Set()).has(s.chain)) return false;
@@ -408,11 +418,18 @@ function refilter() { if (lastData) { renderAll(); drawMarkers(); } }
 $('#priceMax').addEventListener('input', () => { store.set(isEV() ? 'priceMaxEV' : 'priceMax', $('#priceMax').value); refilter(); });
 ['#onlyChains', '#hideUnknown'].forEach(id => $(id).addEventListener('change', () => { store.set(id.slice(1), $(id).checked); refilter(); }));
 ['#minkw', '#plug'].forEach(id => $(id).addEventListener('change', () => { store.set(id.slice(1), $(id).value); renderChains(); if (lastPts) search(); }));
+let kmTimer = null;
+$('#kmMax').addEventListener('input', () => {
+  store.set('kmMax', $('#kmMax').value); drawKmLimit(); refilter();
+  clearTimeout(kmTimer);   // stations that just came into range still need their added time
+  kmTimer = setTimeout(() => { if (lastData && mode === 'trip' && !detoursBusy) fetchDetours(gen); }, 600);
+});
 $('#detourMax').addEventListener('change', () => { store.set('detourMax', $('#detourMax').value); if (lastPts && mode === 'trip') search(); });
 
 function clearResults() {
   gen++; lastPts = null; lastData = null; stations = [];
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
+  if (kmLayer) { map.removeLayer(kmLayer); kmLayer = null; }
   markers.clearLayers(); $('#summary').style.display = 'none'; $('#listCard').style.display = 'none';
   clearIdeal();
 }
@@ -586,6 +603,27 @@ function drawRoute() {
     routeLayer = lastData.area ? L.geoJSON(lastData.area, {style}).addTo(map) : L.circle([c.lat, c.lon], {radius: lastData.radius * 1000, ...style}).addTo(map);
   } else routeLayer = L.polyline(lastData.route.map(c => [c[1], c[0]]), {color: '#2563eb', weight: 5, opacity: .75}).addTo(map);
   map.fitBounds(routeLayer.getBounds(), {padding: [30, 30]});
+  drawKmLimit();
+}
+// grey out the route past "Max km from start" and mark the limit point
+let kmLayer = null;
+function drawKmLimit() {
+  if (kmLayer) { map.removeLayer(kmLayer); kmLayer = null; }
+  const km = kmLimit();
+  if (!km || mode !== 'trip' || !lastData?.route) return;
+  const r = lastData.route.map(c => [c[1], c[0]]);
+  let acc = 0, i = 1, cut = null;
+  for (; i < r.length; i++) {
+    const seg = map.distance(r[i - 1], r[i]) / 1000;
+    if (acc + seg >= km) { const f = seg ? (km - acc) / seg : 0; cut = [r[i - 1][0] + (r[i][0] - r[i - 1][0]) * f, r[i - 1][1] + (r[i][1] - r[i - 1][1]) * f]; break; }
+    acc += seg;
+  }
+  if (!cut) return;   // limit is beyond the destination
+  kmLayer = L.layerGroup([
+    L.polyline([cut, ...r.slice(i)], {color: '#9ca3af', weight: 6, opacity: .9}),
+    L.circleMarker(cut, {radius: 7, color: '#fff', weight: 2, fillColor: '#f59e0b', fillOpacity: 1})
+      .bindTooltip(t('{0} km from start', Math.round(km)), {permanent: true, direction: 'top', offset: [0, -6]}),
+  ]).addTo(map);
 }
 function drawMarkers() {
   const openId = map._popup && map._popup.isOpen() ? map._popup._source?.stationId : null;
@@ -614,7 +652,8 @@ function renderAll() { renderSummary(); renderList(); renderIdeal(); }
 
 function where(s) {
   if (mode === 'near') return t('{0} km away', s.crow_km.toFixed(1));
-  return t('{0} km from start', Math.round(s.along_km)) + (s.at_s != null ? ` · ${hm(s.at_s)}` : '');
+  const d = fromStart(s), exact = s.detour && s.detour.to_km != null;
+  return t('{0} km from start', (exact ? '' : '≈ ') + (d < 10 ? d.toFixed(1) : Math.round(d))) + (s.at_s != null ? ` · ${hm(s.at_s)}` : '');
 }
 function renderSummary() {
   if (mode === 'near') return renderNearSummary();
@@ -625,7 +664,7 @@ function renderSummary() {
                               : `<div class="pick"><div class="k">${t(k)}</div><div class="v">–</div><div class="w">${wait ? t('computing…') : t('none available')}</div></div>`;
   const nm = nearest ? Math.round(nearest.detour.s / 60) : 0;
   $('#summary').style.display = 'block';
-  $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station within +{2} min of added time' : '<b>{0}</b> {1} stations within +{2} min of added time', avail, fuelName(fuel), detourLimit())}
+  $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station within +{2} min of added time' : '<b>{0}</b> {1} stations within +{2} min of added time', avail, fuelName(fuel), detourLimit())}${kmLimit() ? t(', in the first {0} km', Math.round(kmLimit())) : ''}
     <div class="meta">${km} km${traffic ? '' : ' · ' + t('{0} without traffic', `${h} h ${String(mn).padStart(2, '0')}`)}${out ? ` · <span style="color:var(--bad)">${t(isEV() ? '{0} out of service' : '{0} out of stock', out)}</span>` : ''}${opp ? ' · ' + t('{0} on the other carriageway', opp) : ''}</div>
     <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' ' + unitOf(cheapest) : '')}
       ${pick('Smallest detour', nearest, nearest ? `+${nm} min` + (pending ? ' <span class="meta">…</span>' : '') : '', pending)}</div>
@@ -809,7 +848,7 @@ async function fetchIdeal(my) {
     altRoutesLayer.clearLayers(); altCount = (r.alternatives || []).length; altInfo = {fastest: r.fastest_s, fastestM: r.fastest_m, list: r.alternatives || []};
     altLines = altInfo.list.map((a, i) => L.polyline(a.coords.map(c => [c[1], c[0]]), {color: '#64748b', weight: 4, opacity: .55, dashArray: '2 8'})
       .bindTooltip(() => altLabel(i), {sticky: true}).addTo(altRoutesLayer));
-    routeLayer?.bringToFront();
+    routeLayer?.bringToFront(); kmLayer?.eachLayer(l => l.bringToFront());   // keep the km-limit grey-out visible
     fetchTolls(my);
     const byId = Object.fromEntries(stations.map(s => [s.id, s]));
     ideal.forEach(c => { if (byId[c.id] && byId[c.id].detour === undefined) byId[c.id].detour = c.detour; });
@@ -959,7 +998,9 @@ function worthVsQuickest(s) {
   store.set('fill', {l: $('#litres').value, c: $('#cons').value, k: $('#kwh').value, e: $('#evcons').value, w: $('#carkw').value}); renderAll(); }));
 
 // ---------- progressive detour calculation
+let detoursBusy = false;
 async function fetchDetours(my) {
+  detoursBusy = true;
   const queue = stations.filter(s => s.detour === undefined && !s.opposite && passesFilters(s))
     .sort((a, b) => (isAvail(b) - isAvail(a)) || (mode === 'near' ? a.crow_km - b.crow_km : a.off_route_km - b.off_route_km));
   if (mode === 'near') queue.splice(80).forEach(s => s.detour = null);   // road distance only for the 80 nearest
@@ -978,6 +1019,7 @@ async function fetchDetours(my) {
     }
   };
   await Promise.all([worker(), worker()]);
+  detoursBusy = false;
   if (my === gen) { renderAll(); drawMarkers(); if (mode === 'trip') fetchTolls(my); }
 }
 
@@ -1038,6 +1080,7 @@ fetch('/api/status').then(r => r.json()).then(s => {
 setRmode(store.get('rmode') || 'drive');
 const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; $('#kwh').value = fill.k || 40; $('#evcons').value = fill.e || 18; $('#carkw').value = fill.w || 150; }
 if (store.get('detourMax')) $('#detourMax').value = store.get('detourMax');
+if (store.get('kmMax')) $('#kmMax').value = store.get('kmMax');
 if (store.get('minkw') != null) $('#minkw').value = store.get('minkw');
 if (store.get('plug') != null) $('#plug').value = store.get('plug');
 $('#onlyChains').checked = !!store.get('onlyChains'); $('#hideUnknown').checked = !!store.get('hideUnknown');
