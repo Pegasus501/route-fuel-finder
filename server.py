@@ -1074,6 +1074,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype + "; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-cache")      # phones must always get the latest page after an update
         if self.is_tls:
             self.send_header("Strict-Transport-Security", "max-age=86400")
         self.end_headers()
