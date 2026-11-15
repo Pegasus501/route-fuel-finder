@@ -11,6 +11,7 @@ certs/, plain-HTTP requests for DOMAIN are redirected to HTTPS. A second small l
 answers Let's Encrypt challenges for certificate renewal.
 """
 import bisect
+import re
 import io
 import json
 import math
@@ -29,6 +30,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
+
+import ev
 
 PORT = int(os.environ.get("PORT", "8085"))
 ACME_PORT = int(os.environ.get("ACME_PORT", "8086"))
@@ -60,6 +63,69 @@ TOMTOM_KEY = os.environ.get("TOMTOM_KEY") or _config().get("tomtom_key", "")
 # "SP95E10" = either SP95 or SP95-E10, whichever the station has in stock at the best price
 COMBINED = {"SP95E10": ("E10", "SP95")}
 FUEL_CHOICES = FUELS | set(COMBINED)
+
+# EV charging: a "fuel" written EV:<min kW>:<plug>, e.g. EV:50:CCS (plug "" = any)
+EV = ev.EVData(os.path.join(HERE, "cache"), UA, os.path.join(HERE, "ev_prices.json"))
+
+
+def valid_choice(fuel):
+    if fuel in FUEL_CHOICES:
+        return True
+    parts = fuel.split(":")
+    return len(parts) == 3 and parts[0] == "EV" and parts[1].isdigit() and parts[2] in ("", "CCS", "Type 2", "CHAdeMO", "EF")
+
+
+def choice_from(q):
+    fuel = q.get("fuel", ["E85"])[0]
+    if fuel == "EV":
+        fuel = "EV:%d:%s" % (int(float(q.get("minkw", ["0"])[0] or 0)), q.get("plug", [""])[0])
+    return fuel
+
+
+def get_station(sid):
+    with _lock:
+        found = _stations.get(sid)
+    return found if found is not None else EV.stations.get(sid)
+
+
+ADDR_RX = re.compile(r"(\d{5}),?\s*([^,\d][^,]*)$")
+
+
+def ev_view(g, manual):
+    price, src = EV.price_of(g, manual)
+    m = ADDR_RX.search(g["address"])
+    st = {"id": g["id"], "lat": g["lat"], "lon": g["lon"], "address": ADDR_RX.sub("", g["address"]).strip(" ,") or g["address"],
+          "cp": m.group(1) if m else "", "city": (m.group(2).strip().title() if m else ""), "motorway": g["motorway"],
+          "h24": g["hours"] in ("24/7", "Mo-Su 00:00-23:59"), "ev": True, "kw": g["kw"], "plugs": g["plugs"], "cb": g["cb"],
+          "free": g["free"], "operator": g["operator"], "network": g["network"], "chain": g["chain"], "tarif": g["tarif"],
+          "price": price, "price_src": src, "status": EV.status_of(g), "npdc": len(g["pdc"]),
+          "brand": g["chain"] or g["network"] or None, "name": g["name"] or None}
+    if g["updated"]:
+        st["updated"] = g["updated"] + "T12:00:00+00:00"
+    stt = st["status"]
+    if stt and stt["known"] and stt["oos"] == stt["known"]:
+        st["out_since"] = stt["at"]            # every charge point reported out of service
+    return st
+
+
+def candidates(fuel):
+    """(raw station, view-maker) for every station offering this choice."""
+    if fuel.startswith("EV:"):
+        _, minkw, plug = fuel.split(":")
+        minkw = float(minkw)
+        manual = EV.manual_prices()
+        with EV.lock:
+            stations = list(EV.stations.values())
+        return [(g, (lambda g=g: ev_view(g, manual))) for g in stations
+                if g["kw"] >= minkw and (not plug or plug in g["plugs"])]
+    with _lock:
+        stations = list(_stations.values())
+    out = []
+    for s in stations:
+        f = fuel_info(s, fuel)
+        if f:
+            out.append((s, (lambda s=s, f=f: station_view(s, f))))
+    return out
 
 
 def fuel_info(s, fuel):
@@ -262,11 +328,30 @@ def brands_loop():
 
 
 # ================================================================ external APIs
+_prio = threading.local()       # .high = True on threads doing user-visible priority work (Ideal stops)
+
+
 class RateLimiter:
     def __init__(self, per_second):
         self.interval, self.next, self.lock = 1.0 / per_second, 0.0, threading.Lock()
+        self.high_waiting = 0
 
     def wait(self):
+        high = getattr(_prio, "high", False)
+        if high:
+            with self.lock:
+                self.high_waiting += 1
+        else:
+            while self.high_waiting > 0:          # background work yields to priority requests
+                time.sleep(0.05)
+        try:
+            self._wait()
+        finally:
+            if high:
+                with self.lock:
+                    self.high_waiting -= 1
+
+    def _wait(self):
         with self.lock:
             now = time.monotonic()
             t = max(now, self.next)
@@ -634,19 +719,14 @@ def get_nearby(lon, lat, radius, mode):
 
 
 def stations_near(nb, fuel):
-    with _lock:
-        stations = list(_stations.values())
     out = []
-    for s in stations:
-        f = fuel_info(s, fuel)
-        if not f:
-            continue
+    for s, view in candidates(fuel):
         d = crow_km(nb.lon, nb.lat, s["lon"], s["lat"])
         if d > nb.radius:
             continue          # a driving distance is never shorter than the straight line
         if nb.area is not None and not point_in_geom(s["lon"], s["lat"], nb.area):
             continue
-        st = station_view(s, f)
+        st = view()
         st["crow_km"] = round(d, 2)
         if s["id"] in nb.drives:
             st["drive"] = nb.drives[s["id"]]
@@ -658,8 +738,7 @@ def stations_near(nb, fuel):
 def compute_drive(nb, sid):
     if sid in nb.drives:
         return nb.drives[sid]
-    with _lock:
-        s = _stations.get(sid)
+    s = get_station(sid)
     if s is None:
         return None
     dur, dist, _ = via_route([(nb.lon, nb.lat), (s["lon"], s["lat"])])
@@ -668,20 +747,15 @@ def compute_drive(nb, sid):
 
 
 def stations_for(trip, fuel, corridor_km):
-    with _lock:
-        stations = list(_stations.values())
     out = []
     total_km = trip.index.cum[-1]
-    for s in stations:
-        f = fuel_info(s, fuel)
-        if not f:
-            continue
+    for s, view in candidates(fuel):
         n = trip.index.nearest(s["lon"], s["lat"], corridor_km)
         if n is None:
             continue
         # Motorway service station on the left of a fast stretch = other carriageway: not reachable.
         opposite = s["motorway"] and n["left"] and n["off_km"] < 1.0 and n["speed_kmh"] > 80
-        st = station_view(s, f)
+        st = view()
         st.update(off_route_km=round(n["off_km"], 2), along_km=round(n["along_km"], 1), opposite=opposite,
                   at_s=round(trip.index.point_at(n["along_km"])[2]),
                   pct=round(n["along_km"] / total_km, 4) if total_km else 0)
@@ -697,8 +771,7 @@ def compute_detour(trip, sid):
     The route through the station is free to take any path, so this is exact even far from the main route."""
     if sid in trip.detours:
         return trip.detours[sid]
-    with _lock:
-        s = _stations.get(sid)
+    s = get_station(sid)
     if s is None:
         return None
     dur, dist, coords = via_route(points_via(trip, s))
@@ -709,6 +782,15 @@ def compute_detour(trip, sid):
 
 
 _detour_pool = ThreadPoolExecutor(6)
+_ideal_pool = ThreadPoolExecutor(6)
+
+
+def _high(fn, *args):
+    _prio.high = True
+    try:
+        return fn(*args)
+    finally:
+        _prio.high = False
 
 
 def is_usable(st, max_age_days=7):
@@ -717,6 +799,8 @@ def is_usable(st, max_age_days=7):
         return False
     if st.get("out_since") and not st.get("maybe_restocked"):
         return False
+    if st.get("ev"):
+        return True
     try:
         age = time.time() - datetime.fromisoformat(st["updated"]).timestamp()
     except (TypeError, ValueError, KeyError):
@@ -825,25 +909,26 @@ def ideal_candidates(trip, fuel, band_km, alt_band_km=10):
     pool = [dict(s, route=0) for s in stations_for(trip, fuel, band_km) if is_usable(s)]
     cheapest = sorted(pool, key=lambda s: s["price"])[:20]
     closest = sorted(pool, key=lambda s: s["off_route_km"])[:8]
-    chosen = {s["id"]: s for s in cheapest + closest}
+    fastest = sorted(pool, key=lambda s: -s.get("kw", 0))[:6] if fuel.startswith("EV:") else []
+    chosen = {s["id"]: s for s in cheapest + closest + fastest}
     jobs = {sid: (compute_detour, trip, sid) for sid in chosen}
 
-    alts = alternative_routes(trip)
+    _prio.high = True
+    try:
+        alts = alternative_routes(trip)
+    finally:
+        _prio.high = False
     in_main = {s["id"] for s in pool}
-    with _lock:
-        stations = list(_stations.values())
+    cands = candidates(fuel)
     for i, alt in enumerate(alts, start=1):
         found = []
-        for s in stations:
+        for s, view in cands:
             if s["id"] in in_main or s["id"] in chosen:
-                continue
-            f = fuel_info(s, fuel)
-            if not f:
                 continue
             n = alt["index"].nearest(s["lon"], s["lat"], alt_band_km)
             if n is None:
                 continue
-            st = station_view(s, f)
+            st = view()
             if not is_usable(st):
                 continue
             st.update(route=i, along_km=round(n["along_km"], 1), alt_off_km=round(n["off_km"], 2),
@@ -853,7 +938,7 @@ def ideal_candidates(trip, fuel, band_km, alt_band_km=10):
             chosen[st["id"]] = st
             jobs[st["id"]] = (compute_full_detour, trip, st["id"])
 
-    futures = {sid: _detour_pool.submit(*job) for sid, job in jobs.items()}
+    futures = {sid: _ideal_pool.submit(_high, *job) for sid, job in jobs.items()}
     out = []
     for sid, f in futures.items():
         try:
@@ -919,8 +1004,7 @@ def toll_exits(trip, fuel):
 def traffic_via(trip, sid):
     if sid in trip.traffic_via:
         return trip.traffic_via[sid]
-    with _lock:
-        s = _stations.get(sid)
+    s = get_station(sid)
     if s is None:
         return None
     trip.traffic_via[sid] = r = tomtom_route(points_via(trip, s))["duration_s"]
@@ -929,8 +1013,7 @@ def traffic_via(trip, sid):
 
 def via_station_route(trip, sid):
     """Full route geometry start -> (vias) -> station -> end, for drawing the alternative path."""
-    with _lock:
-        s = _stations.get(sid)
+    s = get_station(sid)
     if s is None:
         return None
     pts = points_via(trip, s)
@@ -991,8 +1074,8 @@ class Handler(BaseHTTPRequestHandler):
                 if trip is None:
                     return self.send_json({"error": "Trip expired, search again"}, 410)
                 if u.path == "/api/tolls":
-                    fuel = q.get("fuel", ["E85"])[0]
-                    return self.send_json(toll_exits(trip, fuel if fuel in FUEL_CHOICES else "E85"))
+                    fuel = choice_from(q)
+                    return self.send_json(toll_exits(trip, fuel if valid_choice(fuel) else "E85"))
                 if u.path == "/api/traffic":
                     if trip.traffic is None:
                         return self.send_json({"enabled": False})
@@ -1014,15 +1097,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"enabled": True, "detour_s": out})
                 if u.path == "/api/via":
                     return self.send_json(via_station_route(trip, q["id"][0]) or {"error": "Unknown station"})
-                fuel = q.get("fuel", ["E85"])[0]
-                if fuel not in FUEL_CHOICES:
+                fuel = choice_from(q)
+                if not valid_choice(fuel):
                     return self.send_json({"error": "Unknown fuel"}, 400)
                 band = min(max(float(q.get("band", ["15"])[0]), 1), 25)
                 cands, alts = ideal_candidates(trip, fuel, band)
                 return self.send_json({"band": band, "stations": cands, "alternatives": alts,
                                        "fastest_s": trip.route["duration"], "fastest_m": trip.route["distance"]})
             if u.path == "/api/status":
-                return self.send_json({"stations": len(_stations), "feed_updated": _stations_loaded_at, "https": tls.available()})
+                return self.send_json({"stations": len(_stations), "feed_updated": _stations_loaded_at, "https": tls.available(),
+                                       "ev_stations": len(EV.stations), "ev_status_updated": EV.status_at})
+            if u.path == "/api/ev_chains":
+                return self.send_json(ev_chains())
             return self.serve_static(u.path)
         except (KeyError, ValueError):
             return self.send_json({"error": "Bad request"}, 400)
@@ -1039,10 +1125,15 @@ class Handler(BaseHTTPRequestHandler):
             pts.append((lon, lat))
         if not 2 <= len(pts) <= 6:
             return self.send_json({"error": "Need a start and an end"}, 400)
-        fuel = q.get("fuel", ["E85"])[0]
-        if fuel not in FUEL_CHOICES:
+        fuel = choice_from(q)
+        if not valid_choice(fuel):
             return self.send_json({"error": "Unknown fuel"}, 400)
-        corridor = min(max(float(q.get("corridor", ["3"])[0]), 0.5), 25)
+        if "detour_min" in q:
+            # stations that could be within N minutes of added time: generous distance band, exact filter client-side
+            minutes = min(max(float(q["detour_min"][0]), 1), 60)
+            corridor = min(20.0, 0.6 * minutes + 0.5)
+        else:
+            corridor = min(max(float(q.get("corridor", ["3"])[0]), 0.5), 25)
         trip = get_trip(pts)
         return self.send_json({
             "trip": trip.key, "route": simplify(trip.route["coords"]),
@@ -1054,8 +1145,8 @@ class Handler(BaseHTTPRequestHandler):
         lon, lat = float(q["lon"][0]), float(q["lat"][0])
         if not (-10 < lon < 12 and 40 < lat < 53):
             return self.send_json({"error": "Point outside France"}, 400)
-        fuel = q.get("fuel", ["E85"])[0]
-        if fuel not in FUEL_CHOICES:
+        fuel = choice_from(q)
+        if not valid_choice(fuel):
             return self.send_json({"error": "Unknown fuel"}, 400)
         radius = min(max(float(q.get("radius", ["10"])[0]), 1), 50)
         mode = "drive" if q.get("mode", ["crow"])[0] == "drive" else "crow"
@@ -1185,8 +1276,27 @@ class AcmeHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
+def ev_chains():
+    """Known chains with their number of stations and typical price (for the chain filter)."""
+    manual = EV.manual_prices()
+    out = {}
+    with EV.lock:
+        stations = list(EV.stations.values())
+    for g in stations:
+        if g["chain"]:
+            c = out.setdefault(g["chain"], {"name": g["chain"], "stations": 0, "fast": None, "slow": None})
+            c["stations"] += 1
+    for name, c in out.items():
+        for fast in (True, False):
+            m = manual.get(name)
+            v = (m.get("fast" if fast else "slow") if isinstance(m, dict) else m) if m is not None else None
+            c["fast" if fast else "slow"] = v if v is not None else EV.typical.get((name, fast))
+    return sorted(out.values(), key=lambda c: -c["stations"])
+
+
 if __name__ == "__main__":
     threading.Thread(target=feed_loop, daemon=True).start()
+    threading.Thread(target=EV.loop, daemon=True).start()
     threading.Thread(target=brands_loop, daemon=True).start()
     try:
         acme = ThreadingHTTPServer(("0.0.0.0", ACME_PORT), AcmeHandler)

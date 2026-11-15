@@ -1,0 +1,4 @@
+{
+  "_comment": "Optional manual EV prices in EUR/kWh per chain, e.g. \"Tesla\": {\"fast\": 0.45, \"slow\": 0.30} or \"Lidl\": 0.39. Overrides the network averages computed from the national data.",
+  "_example_Tesla": {"fast": 0.45}
+}

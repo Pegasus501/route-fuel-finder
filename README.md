@@ -6,8 +6,14 @@ A small self-hosted website (French by default, with an English switch) that fin
 with their latest official prices and stock outages.
 
 - **Fuels:** E85 (Superéthanol), Diesel (Gazole), SP95-E10, SP95, SP98, or "SP95 + E10" (whichever of the two is in stock and cheaper at each station)
-- **Trip mode:** enter a start, an end (and an optional stop). Stations within 1–20 km of the route are listed in
-  driving order, with the **real detour time** (leave the route, refuel, come back), so stations on the wrong side of a dual
+- **⚡ Charging (EV):** every public charger in France (national IRVE database) with live availability (free / busy /
+  out of service), power and plug filters, a **max price** (€/kWh), and a **chain filter** (Lidl, Aldi, McDonald's,
+  Leclerc, Intermarché, Super U…, each shown with its typical price). Prices: the station's own published €/kWh if it
+  has one, else your price from `ev_prices.json`, else the typical price of its network computed from the national data,
+  else "unknown". Ideal stops count charging time (station power vs your car's max power).
+- **Max price** filter for fuels too (€/L).
+- **Trip mode:** enter a start, an end (and an optional stop). Stations are filtered by **max added time** (+1 to +30 min,
+  measured exactly), listed in driving order, with the **real detour time** (leave the route, refuel, come back), so stations on the wrong side of a dual
   carriageway show their true cost. Motorway service stations on the opposite carriageway are flagged and never suggested.
 - **Ideal stops:** also explores up to 3 genuinely different routes to the destination (TomTom / OSRM alternatives, or forced
   detours left and right of the main route), shows each one's total time, and checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
@@ -36,6 +42,7 @@ No dependencies beyond **Python 3.9+** standard library. No API keys.
 | Station brands | [OpenStreetMap](https://www.openstreetmap.org) via Overpass (`ref:FR:prix-carburants` tag), refreshed weekly |
 | Toll / free road status | IGN Géoplateforme `bdtopo-pgr` engine (`acces_vehicule_leger`) |
 | Live traffic (optional) | TomTom Routing API (free tier, needs a key) |
+| EV chargers + live availability | [Base nationale consolidée IRVE](https://transport.data.gouv.fr/datasets/685965d0ab901919e14a4a1b) (static daily, dynamic every 5 min) |
 | Map | Leaflet + OpenStreetMap tiles |
 
 ## Run it

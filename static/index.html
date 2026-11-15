@@ -89,6 +89,17 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .alts .a{cursor:pointer;padding:3px 6px;border-radius:6px}
 .alts .a:hover,.alts .a.on{background:var(--chip)}
 .opt .loss{color:var(--bad);font-weight:700}
+.filters{margin:-2px 0 10px}
+.filters .row{flex-wrap:wrap}
+.filters .row>div{flex:1 1 90px}
+.chk{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--ink);margin:8px 0 0;cursor:pointer}
+.chk input{width:auto;margin:0}
+.chains{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0 0}
+.chains button{padding:5px 9px;font-size:12px;background:var(--chip);color:var(--ink);border-radius:99px}
+.chains button.on{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.chains button .p{opacity:.75;font-weight:400;margin-left:3px}
+body:not(.ev) .evOnly{display:none!important}
+body.ev .fuelOnly{display:none!important}
 .tag.toll{background:#f59e0b;color:#1c1917;white-space:normal;display:inline-block}
 .traffic{margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--chip);font-size:13px}
 .traffic b.bad{color:var(--bad)}
@@ -143,7 +154,19 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
   <div class="side">
     <div class="card" id="formCard">
       <div class="fuels" id="fuels">
-        <button data-f="E85">E85</button><button data-f="Gazole" data-i18n="Diesel">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button><button data-f="SP95E10" title="Show whichever of SP95 or SP95-E10 is cheaper at each station" data-i18n-title="Show whichever of SP95 or SP95-E10 is cheaper at each station">SP95 + E10</button>
+        <button data-f="E85">E85</button><button data-f="Gazole" data-i18n="Diesel">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button><button data-f="EV" data-i18n="⚡ Charging">⚡ Charging</button><button data-f="SP95E10" title="Show whichever of SP95 or SP95-E10 is cheaper at each station" data-i18n-title="Show whichever of SP95 or SP95-E10 is cheaper at each station">SP95 + E10</button>
+      </div>
+      <div class="filters" id="filters">
+        <div class="row">
+          <div><label><span data-i18n="Max price">Max price</span> (<span id="priceUnit">€/L</span>)</label><input type="number" id="priceMax" min="0" step="0.01" placeholder="—"></div>
+          <div class="evOnly"><label data-i18n="Min power">Min power</label><select id="minkw"><option value="0" data-i18n="All">All</option><option value="22">≥ 22 kW</option><option value="50" selected>≥ 50 kW</option><option value="150">≥ 150 kW</option></select></div>
+          <div class="evOnly"><label data-i18n="Plug">Plug</label><select id="plug"><option value="" data-i18n="Any">Any</option><option value="CCS">CCS</option><option value="Type 2">Type 2</option><option value="CHAdeMO">CHAdeMO</option></select></div>
+        </div>
+        <div class="evOnly">
+          <label class="chk"><input type="checkbox" id="onlyChains"> <span data-i18n="Only these chains (typical price per kWh):">Only these chains (typical price per kWh):</span></label>
+          <div class="chains" id="chains"></div>
+          <label class="chk"><input type="checkbox" id="hideUnknown"> <span data-i18n="Hide stations with unknown price">Hide stations with unknown price</span></label>
+        </div>
       </div>
       <div class="tabs" id="modeTabs"><button data-m="trip" class="on" data-i18n="🚗 Trip">🚗 Trip</button><button data-m="near" data-i18n="📍 Around a place">📍 Around a place</button></div>
       <div id="tripPanel">
@@ -153,8 +176,8 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
       <div class="field" id="viaWrap" style="display:none"><label data-i18n="Via (optional)">Via (optional)</label><input id="via" placeholder="Stop along the way" data-i18n-ph="Stop along the way" autocomplete="off"><div class="sugg"></div></div>
       <div class="field"><label data-i18n="To">To</label><input id="to" placeholder="e.g. Lyon" data-i18n-ph="e.g. Lyon" autocomplete="off"><div class="sugg"></div></div>
       <div class="row">
-        <div><label data-i18n="Max distance from route">Max distance from route</label>
-          <select id="corridor"><option value="1">1 km</option><option value="2">2 km</option><option value="3" selected>3 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option></select></div>
+        <div><label data-i18n="Max added time">Max added time</label>
+          <select id="detourMax"><option value="1">+1 min</option><option value="2">+2 min</option><option value="5" selected>+5 min</option><option value="10">+10 min</option><option value="15">+15 min</option><option value="20">+20 min</option><option value="30">+30 min</option></select></div>
         <button class="ghost" id="swap" title="Swap start and end" data-i18n-title="Swap start and end">⇅</button>
         <button class="ghost" id="addVia" title="Add a stop" data-i18n-title="Add a stop" data-i18n="+ via">+ via</button>
       </div>
@@ -175,7 +198,8 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
     <div class="card" id="summary" style="display:none"></div>
     <div class="card ideal" id="idealCard" style="display:none">
       <div class="hd"><h3 data-i18n="✨ Ideal stops">✨ Ideal stops</h3>
-        <span class="meta"><span data-i18n="fill">fill</span> <input type="number" id="litres" min="5" max="150" value="40"> L · <span data-i18n="car uses">car uses</span> <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km</span></div>
+        <span class="meta fuelOnly"><span data-i18n="fill">fill</span> <input type="number" id="litres" min="5" max="150" value="40"> L · <span data-i18n="car uses">car uses</span> <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km</span>
+        <span class="meta evOnly"><span data-i18n="charge">charge</span> <input type="number" id="kwh" min="5" max="150" value="40"> kWh · <span data-i18n="car uses">car uses</span> <input type="number" id="evcons" min="8" max="40" step="0.5" value="18"> kWh/100 km · <span data-i18n="car max">car max</span> <input type="number" id="carkw" min="7" max="400" value="150"> kW</span></div>
       <div id="altsBox"></div>
       <div id="ideal"></div>
     </div>
@@ -192,7 +216,12 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
 </div>
 <script>
 const $ = s => document.querySelector(s);
-const FUEL_NAMES = {E85: 'E85', Gazole: 'Diesel', E10: 'SP95-E10', SP95: 'SP95', SP98: 'SP98', SP95E10: 'SP95 / E10'};
+const FUEL_NAMES = {E85: 'E85', Gazole: 'Diesel', E10: 'SP95-E10', SP95: 'SP95', SP98: 'SP98', SP95E10: 'SP95 / E10', EV: '⚡ Charging'};
+const isEV = () => fuel === 'EV';
+const unitOf = s => s && s.ev ? '€/kWh' : '€/L';
+const DEFAULT_CHAINS = ['Lidl', 'Aldi', "McDonald's", 'Leclerc', 'Intermarché', 'Super U'];
+let evChains = null, evChainsSel = null;
+const detourLimit = () => +$('#detourMax').value || 5;
 const map = L.map('map').setView([46.6, 2.4], 6);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom: 18, attribution: '&copy; OpenStreetMap'}).addTo(map);
 let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortBy = 'along', selId = null, markerById = {};
@@ -290,6 +319,19 @@ const FR = {
   'Alternative route {0}: {1} ({2}, {3} km)': 'Itinéraire alternatif {0} : {1} ({2}, {3} km)',
   'Fastest route: {0} ({1} km)': 'Itinéraire le plus rapide : {0} ({1} km)',
   'Added time = the whole trip through the station minus the fastest direct route ({0}).': 'Temps ajouté = trajet complet en passant par la station, moins l\'itinéraire direct le plus rapide ({0}).',
+  '{0} out of service': '{0} hors service', '⚡ Charging': '⚡ Recharge', 'Max price': 'Prix max', 'Min power': 'Puissance min', 'All': 'Toutes', 'Plug': 'Prise', 'Any': 'Toutes',
+  'Only these chains (typical price per kWh):': 'Seulement ces enseignes (prix habituel au kWh) :', 'Hide stations with unknown price': 'Masquer les stations au prix inconnu',
+  'Max added time': 'Temps ajouté max', 'charge': 'recharge', 'car max': 'max voiture',
+  '<b>{0}</b> {1} station within +{2} min of added time': '<b>{0}</b> station {1} à moins de +{2} min de temps ajouté',
+  '<b>{0}</b> {1} stations within +{2} min of added time': '<b>{0}</b> stations {1} à moins de +{2} min de temps ajouté',
+  'OUT OF SERVICE · {0}': 'HORS SERVICE · {0}', '{0}/{1} free': '{0}/{1} libres', 'all busy ({0}/{1})': 'tout occupé ({0}/{1})',
+  'availability unknown': 'dispo inconnue', 'updated {0} ago': 'mis à jour il y a {0}', 'price unknown': 'prix inconnu', 'free': 'gratuit',
+  'network price': 'prix du réseau', 'your price': 'votre prix', 'typical price of this network, from its stations that publish one': 'prix habituel de ce réseau, d\'après ses stations qui le publient',
+  '24/7': '24/24', '{0} charge points': '{0} points de charge', 'Operator: {0}': 'Opérateur : {0}',
+  '{0} free, {1} busy, {2} out of service (updated {3} ago)': '{0} libre(s), {1} occupé(s), {2} hors service (mis à jour il y a {3})',
+  'Price: {0} €/kWh ({1})': 'Prix : {0} €/kWh ({1})', 'published by the station': 'publié par la station', 'typical price of this network': 'prix habituel du réseau',
+  'Tariff:': 'Tarif :', '~{0} min to charge {1} kWh': '~{0} min pour charger {1} kWh', '≈ {0} €': '≈ {0} €', '~{0} min charge': '~{0} min de charge',
+  'Savings compare with the quickest stop for {0} kWh, minus the energy used on the extra km; times include charging': 'Économies par rapport à l\'arrêt le plus rapide pour {0} kWh, moins l\'énergie consommée sur les km en plus ; les temps incluent la recharge',
   'The fuel station finder for big rats': 'Le système de recherche de station essence pour les gros rats',
   'Exploring alternative routes and stations up to 15 km off your route for better deals…': 'Exploration d\'itinéraires alternatifs et des stations jusqu\'à 15 km de votre trajet…',
   'Alternative route {0}': 'Itinéraire alternatif {0}', 'via alternative route {0}': 'par l\'itinéraire alternatif {0}',
@@ -318,12 +360,55 @@ function applyLang() {
 // ---------- fuel chips
 function setFuel(f) {
   fuel = FUEL_NAMES[f] ? f : 'E85';
+  document.body.classList.toggle('ev', isEV());
+  $('#priceUnit').textContent = isEV() ? '€/kWh' : '€/L';
+  $('#priceMax').value = store.get(isEV() ? 'priceMaxEV' : 'priceMax') || '';
+  if (isEV() && !evChains) loadChains();
   document.querySelectorAll('#fuels button').forEach(b => b.classList.toggle('on', b.dataset.f === fuel));
   store.set('fuel', fuel);
 }
 document.querySelectorAll('#fuels button').forEach(b => b.onclick = () => { setFuel(b.dataset.f); if (lastPts) search(); });
 document.querySelectorAll('#modeTabs button').forEach(b => b.onclick = () => { if (b.dataset.m !== mode) { setMode(b.dataset.m); clearResults(); } });
 document.querySelectorAll('#rmode button').forEach(b => b.onclick = () => { setRmode(b.dataset.r); if (lastPts && mode === 'near') search(); });
+// ---------- filters (price limit, EV power/plug/chains, max added time)
+function fuelParams() { return isEV() ? `fuel=EV&minkw=${$('#minkw').value}&plug=${encodeURIComponent($('#plug').value)}` : `fuel=${fuel}`; }
+function passesFilters(s) {
+  const pm = parseFloat($('#priceMax').value);
+  if (pm > 0 && s.price != null && s.price > pm) return false;
+  if (s.ev) {
+    if ($('#hideUnknown').checked && s.price == null) return false;
+    if ($('#onlyChains').checked && !(evChainsSel || new Set()).has(s.chain)) return false;
+  }
+  return true;
+}
+function passes(s) {
+  if (!passesFilters(s)) return false;
+  return !(mode === 'trip' && s.detour && s.detour.s > detourLimit() * 60);   // exact added time, once known
+}
+const shown = () => stations.filter(passes);
+async function loadChains() {
+  try { evChains = await (await fetch('/api/ev_chains')).json(); } catch { evChains = []; }
+  renderChains();
+}
+function renderChains() {
+  if (!evChains) return;
+  evChainsSel = evChainsSel || new Set(store.get('evChains') || DEFAULT_CHAINS);
+  const fast = +$('#minkw').value >= 50;
+  $('#chains').innerHTML = evChains.map(c => {
+    const p = fast ? c.fast : c.slow;
+    return `<button data-c="${esc(c.name)}" class="${evChainsSel.has(c.name) ? 'on' : ''}">${esc(c.name)}<span class="p">${p != null ? '~' + p.toFixed(2) : '?'}</span></button>`;
+  }).join('');
+  $('#chains').querySelectorAll('button').forEach(b => b.onclick = () => {
+    evChainsSel.has(b.dataset.c) ? evChainsSel.delete(b.dataset.c) : evChainsSel.add(b.dataset.c);
+    store.set('evChains', [...evChainsSel]); renderChains(); refilter();
+  });
+}
+function refilter() { if (lastData) { renderAll(); drawMarkers(); } }
+$('#priceMax').addEventListener('input', () => { store.set(isEV() ? 'priceMaxEV' : 'priceMax', $('#priceMax').value); refilter(); });
+['#onlyChains', '#hideUnknown'].forEach(id => $(id).addEventListener('change', () => { store.set(id.slice(1), $(id).checked); refilter(); }));
+['#minkw', '#plug'].forEach(id => $(id).addEventListener('change', () => { store.set(id.slice(1), $(id).value); renderChains(); if (lastPts) search(); }));
+$('#detourMax').addEventListener('change', () => { store.set('detourMax', $('#detourMax').value); if (lastPts && mode === 'trip') search(); });
+
 function clearResults() {
   gen++; lastPts = null; lastData = null; stations = [];
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
@@ -398,7 +483,6 @@ $('#swap').onclick = () => {
 $('#addVia').onclick = () => { $('#viaWrap').style.display = 'block'; $('#addVia').style.display = 'none'; $('#via').focus(); };
 $('#go').onclick = () => search(true);
 $('#showNA').onchange = () => { renderList(); drawMarkers(); };
-$('#corridor').onchange = () => { if (lastPts && mode === 'trip') search(); };
 $('#radius').onchange = () => { if (lastPts && mode === 'near') search(); };
 
 function showMsg(html, isErr) {
@@ -430,7 +514,7 @@ async function search(userAction) {
     if (mode === 'near') {
       const c = await resolve('center');
       if (!c) throw new Error(t('Type an address or tap 📍 to use your location.'));
-      const res = await fetch(`/api/nearby?lon=${c.lon.toFixed(5)}&lat=${c.lat.toFixed(5)}&radius=${$('#radius').value}&mode=${rmode}&fuel=${fuel}`);
+      const res = await fetch(`/api/nearby?lon=${c.lon.toFixed(5)}&lat=${c.lat.toFixed(5)}&radius=${$('#radius').value}&mode=${rmode}&${fuelParams()}`);
       const data = await res.json();
       if (data.error) throw new Error(t(data.error));
       if (my !== gen) return;
@@ -445,13 +529,13 @@ async function search(userAction) {
     const from = await resolve('from'), to = await resolve('to'), via = await resolve('via');
     if (!from || !to) throw new Error(t('Please enter a start and a destination.'));
     const pts = [from, via, to].filter(Boolean);
-    const res = await fetch(`/api/route?${pts.map(p => `p=${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join('&')}&corridor=${$('#corridor').value}&fuel=${fuel}`);
+    const res = await fetch(`/api/route?${pts.map(p => `p=${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join('&')}&detour_min=${detourLimit()}&${fuelParams()}`);
     const data = await res.json();
     if (data.error) throw new Error(t(data.error));
     if (my !== gen) return;
     lastPts = pts; lastData = data; trip = data.trip; selId = null;
     stations = data.stations;
-    store.set('last', {from, to, via, corridor: $('#corridor').value});
+    store.set('last', {from, to, via});
     clearIdeal();
     drawRoute(); drawMarkers(); renderAll(); updatePip();
     fetchDetours(my);
@@ -472,11 +556,11 @@ function ago(iso) {
   return t(Math.round(d) > 1 ? '{0} days' : '{0} day', Math.round(d));
 }
 const isOut = s => !!s.out_since && !s.maybe_restocked;
-const isAvail = s => !isOut(s) && !s.opposite && s.price != null;
-const isFresh = s => ageDays(s.updated) <= 7;
+const isAvail = s => !isOut(s) && !s.opposite && (s.ev || s.price != null);
+const isFresh = s => s.ev ? true : ageDays(s.updated) <= 7;
 function picks() {
-  const av = stations.filter(isAvail);
-  const fresh = av.filter(isFresh);
+  const av = shown().filter(isAvail);
+  const fresh = av.filter(s => isFresh(s) && s.price != null);
   const cheapest = fresh.length ? fresh.reduce((a, b) => b.price < a.price || (b.price === a.price && (b.detour?.s ?? 1e9) < (a.detour?.s ?? 1e9)) ? b : a) : null;
   const withD = av.filter(s => s.detour);
   const nearest = withD.length ? withD.reduce((a, b) => b.detour.s < a.detour.s || (b.detour.s === a.detour.s && b.price < a.price) ? b : a) : null;
@@ -511,9 +595,9 @@ function drawMarkers() {
   const {cheapest, nearest} = picks();
   const showNA = $('#showNA').checked;
   stations.forEach(s => {
-    if (!showNA && !isAvail(s)) return;
+    if (!passes(s) || (!showNA && !isAvail(s))) return;
     const cls = !isAvail(s) ? 'na' : s === cheapest ? 'best' : s === nearest ? 'near' : !isFresh(s) ? 'old' : '';
-    const label = s.price != null ? s.price.toFixed(2) : '✕';
+    const label = s.price != null ? s.price.toFixed(2) : s.ev ? '⚡' + Math.round(s.kw) : '✕';
     const sel = s.id === selId;
     const m = L.marker([s.lat, s.lon], {zIndexOffset: sel ? 3000 : cls === 'best' || cls === 'near' ? 1000 : cls === 'na' ? -500 : 0,
       icon: L.divIcon({className: '', html: `<div class="pin ${cls} ${sel ? 'selp' : ''}"><span>${label}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
@@ -535,14 +619,14 @@ function renderSummary() {
   if (mode === 'near') return renderNearSummary();
   const d = lastData, km = Math.round(d.distance_m / 1000), h = Math.floor(d.duration_s / 3600), mn = Math.round(d.duration_s % 3600 / 60);
   const {cheapest, nearest, pending, avail} = picks();
-  const out = stations.filter(isOut).length, opp = stations.filter(s => s.opposite && !isOut(s)).length;
+  const out = shown().filter(isOut).length, opp = shown().filter(s => s.opposite && !isOut(s)).length;
   const pick = (k, s, v, wait) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${t(k)}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''} · ${where(s)}</div></div>`
                               : `<div class="pick"><div class="k">${t(k)}</div><div class="v">–</div><div class="w">${wait ? t('computing…') : t('none available')}</div></div>`;
   const nm = nearest ? Math.round(nearest.detour.s / 60) : 0;
   $('#summary').style.display = 'block';
-  $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station available within {2} km' : '<b>{0}</b> {1} stations available within {2} km', avail, fuelName(fuel), $('#corridor').value)}
-    <div class="meta">${km} km${traffic ? '' : ' · ' + t('{0} without traffic', `${h} h ${String(mn).padStart(2, '0')}`)}${out ? ` · <span style="color:var(--bad)">${t('{0} out of stock', out)}</span>` : ''}${opp ? ' · ' + t('{0} on the other carriageway', opp) : ''}</div>
-    <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
+  $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station within +{2} min of added time' : '<b>{0}</b> {1} stations within +{2} min of added time', avail, fuelName(fuel), detourLimit())}
+    <div class="meta">${km} km${traffic ? '' : ' · ' + t('{0} without traffic', `${h} h ${String(mn).padStart(2, '0')}`)}${out ? ` · <span style="color:var(--bad)">${t(isEV() ? '{0} out of service' : '{0} out of stock', out)}</span>` : ''}${opp ? ' · ' + t('{0} on the other carriageway', opp) : ''}</div>
+    <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' ' + unitOf(cheapest) : '')}
       ${pick('Smallest detour', nearest, nearest ? `+${nm} min` + (pending ? ' <span class="meta">…</span>' : '') : '', pending)}</div>
     ${traffic ? `<div class="traffic">${t('🚦 With live traffic: <b>{0}</b> · arrive {1}', hm(traffic.duration_s), clock(new Date(Date.now() + traffic.duration_s * 1000)))}${traffic.delay_s >= 60 ? ` · <b class="bad">${t('+{0} min of delays', Math.round(traffic.delay_s / 60))}</b> ${t('(red on the map)')}` : ' · ' + t('no significant delays')}</div>` : ''}
     ${pending ? `<div class="note">${t('Calculating real detours: {0}/{1}', avail - pending, avail)}</div>` : ''}`;
@@ -551,13 +635,13 @@ function renderSummary() {
 }
 function renderNearSummary() {
   const {cheapest, nearest, pending, avail} = picks();
-  const out = stations.filter(isOut).length;
+  const out = shown().filter(isOut).length;
   const pick = (k, s, v, wait) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${t(k)}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''}</div></div>`
                               : `<div class="pick"><div class="k">${t(k)}</div><div class="v">–</div><div class="w">${wait ? t('computing…') : t('none available')}</div></div>`;
   $('#summary').style.display = 'block';
   $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station available within {2} km' : '<b>{0}</b> {1} stations available within {2} km', avail, fuelName(fuel), lastData.radius)} ${t(lastData.mode === 'drive' ? 'by road' : "à vol d'oiseau")}
     <div class="meta">${t('around {0}', esc(lastPts[0].label))}${out ? ` · <span style="color:var(--bad)">${t('{0} out of stock', out)}</span>` : ''}</div>
-    <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
+    <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' ' + unitOf(cheapest) : '')}
       ${pick('Closest', nearest, nearest ? `${Math.max(1, Math.round(nearest.detour.s / 60))} min <span class="meta">${nearest.detour.km} km</span>` : '', pending)}</div>
     ${pending ? `<div class="note">${t('Calculating road distances: {0}/{1}', avail - pending, avail)}</div>` : ''}`;
   $('#summary').querySelectorAll('.pick[data-id]').forEach(p => p.onclick = () => select(p.dataset.id, true));
@@ -577,7 +661,22 @@ function navLinks(s) {
   return `<a href="https://waze.com/ul?${w}&navigate=yes" target="_blank" rel="noopener">Waze</a>` +
          `<a href="https://www.google.com/maps/search/?api=1&query=${g}" target="_blank" rel="noopener">Maps</a>`;
 }
+function evTags(s) {
+  const tr = window.t, t = [], st = s.status;
+  if (isOut(s)) t.push(`<span class="tag bad">${tr('OUT OF SERVICE · {0}', ago(s.out_since))}</span>`);
+  else if (st && st.free) t.push(`<span class="tag ok" title="${tr('updated {0} ago', ago(st.at))}">✓ ${tr('{0}/{1} free', st.free, st.total)}</span>`);
+  else if (st && st.busy) t.push(`<span class="tag old">${tr('all busy ({0}/{1})', st.busy, st.total)}</span>`);
+  else t.push(`<span class="tag">${tr('availability unknown')}</span>`);
+  if (s.price == null) t.push(`<span class="tag">${tr('price unknown')}</span>`);
+  else if (s.price === 0) t.push(`<span class="tag ok">${tr('free')}</span>`);
+  else if (s.price_src === 'network') t.push(`<span class="tag" title="${tr('typical price of this network, from its stations that publish one')}">${tr('network price')}</span>`);
+  else if (s.price_src === 'manual') t.push(`<span class="tag">${tr('your price')}</span>`);
+  if (s.opposite) t.push(`<span class="tag bad">${tr('other side of motorway')}</span>`);
+  if (mode === 'trip' && exitsToll(s)) t.push(tollTag(s));
+  return t.join('');
+}
 function statusTags(s) {
+  if (s.ev) return evTags(s);
   const tr = window.t, t = [];
   if (isOut(s)) t.push(`<span class="tag bad">${tr('OUT OF STOCK · {0}', ago(s.out_since))}</span>`);
   else if (s.maybe_restocked) t.push(`<span class="tag old">${tr('outage reported {0} ago, price updated since', ago(s.out_since))}</span>`);
@@ -587,7 +686,7 @@ function statusTags(s) {
   return t.join('');
 }
 function popupHtml(s) {
-  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : t('no price')}</b> ${fuelName(s.variant || fuel)}${otherPrice(s, ' · ')}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
+  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' ' + unitOf(s) : t('no price')}</b> ${s.ev ? `· ${s.kw} kW · ${esc(s.plugs.join(', '))}` : fuelName(s.variant || fuel)}${otherPrice(s, ' · ')}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
     <div class="tags">${statusTags(s)}</div>
     <small>${mode === 'near' ? `${where(s)} · ${detourText(s.detour)}` : `${where(s)} · ${s.opposite ? t('not reachable in your direction') : detourText(s.detour)}${s.detour ? ` (${s.detour.km} km)` : ''}`}</small>
     ${mode === 'trip' && s.detour && !s.opposite ? `<div class="meta">${t('Trip with this stop: <b>{0}</b> instead of {1}', hm(lastData.duration_s + s.detour.s), hm(lastData.duration_s))}</div><div class="tags">${worthVsQuickest(s)}</div>` : ''}
@@ -609,18 +708,18 @@ function renderList() {
   const visible = el => { const r = el.getBoundingClientRect(); return r.bottom > 60 && r.top < vh; };
   const anchorEl = cur.find(el => el.dataset.id === selId && visible(el)) || cur.find(visible);
   const anchor = anchorEl ? {id: anchorEl.dataset.id, top: anchorEl.getBoundingClientRect().top} : null;
-  $('#list').innerHTML = stations.filter(s => showNA || isAvail(s)).sort(cmp).map(s => `
+  $('#list').innerHTML = stations.filter(s => passes(s) && (showNA || isAvail(s))).sort(cmp).map(s => `
     <div class="st ${s.id === selId ? 'sel' : ''} ${isAvail(s) ? '' : 'na'}" data-id="${s.id}">
       <div>${title(s) ? `<div><b>${esc(title(s))}</b></div><div class="meta">${esc(s.address)}, ${esc(s.cp)} ${esc(s.city)}</div>`
                    : `<div><b>${esc(s.city)}</b> <span class="meta">${esc(s.cp)}</span></div><div class="meta">${esc(s.address)}</div>`}</div>
-      <div><div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>${s.variant ? `<div class="meta" style="text-align:right;font-weight:600">${fuelName(s.variant)}</div>` : ''}${shortDetour(s)}</div>
+      <div><div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + `<span class="meta"> ${s.ev ? '€/kWh' : '€'}</span>` : '–'}</div>${s.variant ? `<div class="meta" style="text-align:right;font-weight:600">${fuelName(s.variant)}</div>` : ''}${s.ev ? `<div class="meta" style="text-align:right;font-weight:600">⚡ ${Math.round(s.kw)} kW</div>` : ''}${shortDetour(s)}</div>
       <div class="tags">
         ${s === cheapest ? `<span class="tag cheap">${t('cheapest')}</span>` : ''}${s === nearest ? `<span class="tag near">${t(mode === 'near' ? 'closest' : 'smallest detour')}</span>` : ''}
         ${statusTags(s)}
         <span class="tag">${where(s)}</span>
         ${s.opposite || !detourText(s.detour) || mode === 'trip' ? '' : `<span class="tag">${detourText(s.detour)}</span>`}
         ${mode === 'trip' && exitsToll(s) && s.detour ? worthVsQuickest(s) : ''}
-        ${s.motorway ? `<span class="tag">${t('motorway')}</span>` : ''}${s.h24 ? `<span class="tag">${t('24/7 card')}</span>` : ''}
+        ${s.motorway ? `<span class="tag">${t('motorway')}</span>` : ''}${s.h24 ? `<span class="tag">${t(s.ev ? '24/7' : '24/7 card')}</span>` : ''}${s.ev ? `<span class="tag">${esc(s.plugs.join(' · '))}</span>${s.cb ? `<span class="tag">💳 CB</span>` : ''}` : ''}
         ${s.id === selId ? '' : `<span class="nav" style="margin-left:auto">${navLinks(s)}</span>`}
       </div>${s.id === selId ? details(s) : ''}</div>`).join('') || `<div class="note" style="padding:12px">${t('No stations to show.')}</div>`;
   if (anchor) {
@@ -632,7 +731,15 @@ function renderList() {
 function details(s) {
   const when = iso => new Date(iso).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
   const lines = [];
-  if (s.updated && s.price != null) lines.push(t('Price updated {0}', when(s.updated)) + (s.variant ? ` · ${fuelName(s.variant)}` : ''));
+  if (s.ev) {
+    lines.push(`⚡ ${s.kw} kW · ${esc(s.plugs.join(', '))} · ${t('{0} charge points', s.npdc)}${s.cb ? ' · 💳 CB' : ''}`);
+    if (s.operator || s.network) lines.push(t('Operator: {0}', esc([s.network, s.operator].filter((v, i, a) => v && a.indexOf(v) === i).join(' / '))));
+    if (s.status) lines.push(t('{0} free, {1} busy, {2} out of service (updated {3} ago)', s.status.free, s.status.busy, s.status.oos, ago(s.status.at)));
+    if (s.price != null) lines.push(t('Price: {0} €/kWh ({1})', s.price.toFixed(3), t({station: 'published by the station', network: 'typical price of this network', manual: 'your price'}[s.price_src] || '')));
+    if (s.tarif) lines.push(`<span class="meta">${t('Tariff:')} ${esc(s.tarif)}</span>`);
+    const cs = chargeS(s), kwh = +$('#kwh').value || 40;
+    lines.push(t('~{0} min to charge {1} kWh', Math.round(cs / 60), kwh) + (s.price != null ? ' · ' + t('≈ {0} €', (s.price * kwh).toFixed(2)) : ''));
+  } else if (s.updated && s.price != null) lines.push(t('Price updated {0}', when(s.updated)) + (s.variant ? ` · ${fuelName(s.variant)}` : ''));
   if (s.other) lines.push(otherPrice(s, ''));
   if (s.out_since) lines.push(t('Outage reported {0}', when(s.out_since)));
   if (mode === 'trip') {
@@ -694,7 +801,7 @@ function clearIdeal() { ideal = null; idealSel = null; altLayer.clearLayers(); a
 async function fetchIdeal(my) {
   ideal = 'loading'; renderIdeal();
   try {
-    const r = await (await fetch(`/api/ideal?trip=${encodeURIComponent(trip)}&fuel=${fuel}&band=15`)).json();
+    const r = await (await fetch(`/api/ideal?trip=${encodeURIComponent(trip)}&${fuelParams()}&band=15`)).json();
     if (my !== gen) return;
     if (r.error) throw new Error(r.error);
     ideal = r.stations;
@@ -709,18 +816,27 @@ async function fetchIdeal(my) {
   } catch { if (my === gen) ideal = 'error'; }
   if (my === gen) renderIdeal();
 }
+// energy to buy and consumption (fuel: litres & L/100 km; EV: kWh & kWh/100 km)
+function fillParams() {
+  return isEV() ? {amount: Math.max(1, +$('#kwh').value || 40), cons: Math.max(1, +$('#evcons').value || 18)}
+                : {amount: Math.max(1, +$('#litres').value || 40), cons: Math.max(1, +$('#cons').value || 7)};
+}
+// EV: time spent charging at min(station power, car max power), ~80% of peak on average
+function chargeS(s) { return s.ev ? (+$('#kwh').value || 40) / (Math.min(s.kw || 22, +$('#carkw').value || 150) * 0.8) * 3600 : 0; }
+const stopS = s => s.detour.s + chargeS(s);
 function idealOptions() {
-  const L_ = Math.max(1, +$('#litres').value || 40), cons = Math.max(1, +$('#cons').value || 7);
+  const {amount: L_, cons} = fillParams();
   const pool = {};
-  [...(Array.isArray(ideal) ? ideal : []), ...stations.filter(s => isAvail(s) && isFresh(s) && s.detour)].forEach(s => { pool[s.id] = s; });
-  const all = Object.values(pool).sort((a, b) => a.detour.s - b.detour.s || a.price - b.price);
+  [...(Array.isArray(ideal) ? ideal : []), ...stations.filter(s => isAvail(s) && isFresh(s) && s.detour)]
+    .filter(s => s.price != null && s.detour && passesFilters(s)).forEach(s => { pool[s.id] = s; });
+  const all = Object.values(pool).sort((a, b) => stopS(a) - stopS(b) || a.price - b.price);
   if (!all.length) return [];
   // Pareto frontier: each next option is slower but strictly cheaper than every quicker one
   const front = [];
   for (const s of all) if (!front.length || s.price < front[front.length - 1].price - 1e-9) front.push(s);
   const q = front[0];
   const opts = front.map(s => {
-    const extraKm = Math.max(0, s.detour.km - q.detour.km), extraMin = Math.max(0, Math.round((s.detour.s - q.detour.s) / 60));
+    const extraKm = Math.max(0, s.detour.km - q.detour.km), extraMin = Math.max(0, Math.round((stopS(s) - stopS(q)) / 60));
     const tollCost = peageFor(s) - peageFor(q);
     const saving = (q.price - s.price) * L_ - extraKm * cons / 100 * s.price - tollCost;
     return {s, extraKm, extraMin, saving, tollCost};
@@ -758,19 +874,19 @@ function renderIdeal() {
   const base = lastData.duration_s;
   $('#ideal').innerHTML = opts.map((o, i) => {
     const s = o.s, label = i === 0 ? t('⚡ Quickest stop') : (i === opts.length - 1 && opts.length > 2 ? t('💰 Cheapest worth it') : t('Option {0}', i + 1));
-    const off = s.route > 0 ? '' : s.off_route_km > +$('#corridor').value ? t(' · {0} km off route', s.off_route_km.toFixed(1)) : '';
+    const off = s.route > 0 ? '' : s.off_route_km > 3 ? t(' · {0} km off route', s.off_route_km.toFixed(1)) : '';
     const altTag = s.route > 0 ? `<div style="margin-top:3px"><span class="tag near">🛣 ${t('via alternative route {0}', s.route)}</span></div>` : '';
     return `<div class="opt ${idealSel === s.id ? 'sel' : ''}" data-id="${s.id}">
       <div><div class="l">${label}</div><div class="n">${esc(title(s) || s.city)}</div>
         <div class="meta">${esc(s.city)} · ${where(s)}${off}</div>${altTag}</div>
-      <div class="r"><div class="big">${s.price.toFixed(3)} €${s.variant ? ` <span class="meta">${fuelName(s.variant)}</span>` : ''}</div>
-        <div class="meta"><b>${mins(s.detour)}</b> · ${t('trip {0}', hm(base + s.detour.s))}</div>
+      <div class="r"><div class="big">${s.price.toFixed(3)} ${unitOf(s)}${s.variant ? ` <span class="meta">${fuelName(s.variant)}</span>` : ''}</div>
+        <div class="meta"><b>${mins(s.detour)}</b>${s.ev ? ` · ⚡ ${Math.round(s.kw)} kW, ${t('~{0} min charge', Math.round(chargeS(s) / 60))}` : ''} · ${t('trip {0}', hm(base + stopS(s)))}</div>
         ${trafficLine(s)}
         ${i ? `<div class="meta"><span class="save">${t('saves {0} €', o.saving.toFixed(2))}</span> ${t('for {0} min more', o.extraMin)}</div>` : ''}</div>
       ${exitsToll(s) ? `<div style="grid-column:1/-1;margin-top:4px">${tollTag(s, i > 0)}</div>` : ''}
       ${idealSel === s.id ? `<div style="grid-column:1/-1">${details(s)}</div>` : ''}
     </div>`;
-  }).join('') + `<div class="note">${t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', +$('#litres').value || 40)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}${altCount ? ' ' + t('Also explored {0} different routes (grey dashed on the map).', altCount) : ''} ${t('Added time = the whole trip through the station minus the fastest direct route ({0}).', hm(base))}</div>`;
+  }).join('') + `<div class="note">${isEV() ? t('Savings compare with the quickest stop for {0} kWh, minus the energy used on the extra km; times include charging', fillParams().amount) : t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', fillParams().amount)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}${altCount ? ' ' + t('Also explored {0} different routes (grey dashed on the map).', altCount) : ''} ${t('Added time = the whole trip through the station minus the fastest direct route ({0}).', hm(base))}</div>`;
   $('#ideal').querySelectorAll('.opt').forEach(el => el.onclick = e => {
     if (e.target.closest('a')) return;
     const see = e.target.closest('[data-see]');
@@ -799,7 +915,7 @@ async function showVia(s) {
 }
 async function fetchTolls(my) {
   try {
-    const r = await (await fetch(`/api/tolls?trip=${encodeURIComponent(trip)}&fuel=${fuel}`)).json();
+    const r = await (await fetch(`/api/tolls?trip=${encodeURIComponent(trip)}&${fuelParams()}`)).json();
     if (my !== gen || r.error) return;
     tollExits = new Set(r.exits); tollEst = r.cost || {}; renderAll();
   } catch {}
@@ -828,21 +944,22 @@ function trafficLine(s) {
   const v = trafficVia[s.id];
   if (v === undefined) return `<div class="meta">${t('with traffic…')}</div>`;
   if (v === null) return '';
-  return `<div class="meta">${t('with traffic: <b>+{0} min</b> · trip {1}', Math.round(v / 60), hm(traffic.duration_s + v))}</div>`;
+  return `<div class="meta">${t('with traffic: <b>+{0} min</b> · trip {1}', Math.round(v / 60), hm(traffic.duration_s + v + chargeS(s)))}</div>`;
 }
 function worthVsQuickest(s) {
   const opts = idealOptions(); if (!opts.length || !s.detour || s.opposite || s.price == null) return '';
   const q = opts[0].s; if (q.id === s.id) return `<span class="tag ok">${t('quickest stop')}</span>`;
-  const L_ = Math.max(1, +$('#litres').value || 40), cons = Math.max(1, +$('#cons').value || 7);
+  const {amount: L_, cons} = fillParams();
   const tollCost = peageFor(s) - peageFor(q);
   const v = (q.price - s.price) * L_ - Math.max(0, s.detour.km - q.detour.km) * cons / 100 * s.price - tollCost;
   return v >= 0 ? `<span class="tag ok">${t('saves {0} € vs quickest stop', v.toFixed(2))}</span>` : `<span class="tag bad">${t('costs {0} € more than quickest stop', (-v).toFixed(2))}${exitsToll(s) ? ' (péage)' : ''}</span>`;
 }
-['#litres', '#cons'].forEach(id => $(id).addEventListener('input', () => { store.set('fill', {l: $('#litres').value, c: $('#cons').value}); renderAll(); }));
+['#litres', '#cons', '#kwh', '#evcons', '#carkw'].forEach(id => $(id).addEventListener('input', () => {
+  store.set('fill', {l: $('#litres').value, c: $('#cons').value, k: $('#kwh').value, e: $('#evcons').value, w: $('#carkw').value}); renderAll(); }));
 
 // ---------- progressive detour calculation
 async function fetchDetours(my) {
-  const queue = stations.filter(s => s.detour === undefined && !s.opposite)
+  const queue = stations.filter(s => s.detour === undefined && !s.opposite && passesFilters(s))
     .sort((a, b) => (isAvail(b) - isAvail(a)) || (mode === 'near' ? a.crow_km - b.crow_km : a.off_route_km - b.off_route_km));
   if (mode === 'near') queue.splice(80).forEach(s => s.detour = null);   // road distance only for the 80 nearest
   const byId = Object.fromEntries(stations.map(s => [s.id, s]));
@@ -879,7 +996,7 @@ function updatePip() {
   }, 60);
 }
 const isPip = () => $('#mapBox').classList.contains('pip');
-function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' €' : t('no price')}${s.variant ? ' ' + fuelName(s.variant) : ''}`; }
+function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' ' + unitOf(s) : t('no price')}${s.variant ? ' ' + fuelName(s.variant) : ''}${s.ev ? ` · ${Math.round(s.kw)} kW` : ''}`; }
 function otherPrice(s, sep) {
   const o = s.other; if (!o) return '';
   return `${sep}<span class="meta">${o.out ? t('{0}: out of stock', fuelName(o.variant)) : t('also {0}: {1} €', fuelName(o.variant), o.price.toFixed(3))}</span>`;
@@ -914,12 +1031,16 @@ $('#langBtn').onclick = () => {
   if (lastData) { renderAll(); drawMarkers(); }
   if (!$('#go').disabled) $('#go').textContent = t('Find stations');
 };
-setFuel(store.get('fuel') || 'E85');
 fetch('/api/status').then(r => r.json()).then(s => {
   if (s.feed_updated) { feedTs = s.feed_updated; applyLang(); }
 }).catch(() => {});
 setRmode(store.get('rmode') || 'drive');
-const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; }
+const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; $('#kwh').value = fill.k || 40; $('#evcons').value = fill.e || 18; $('#carkw').value = fill.w || 150; }
+if (store.get('detourMax')) $('#detourMax').value = store.get('detourMax');
+if (store.get('minkw') != null) $('#minkw').value = store.get('minkw');
+if (store.get('plug') != null) $('#plug').value = store.get('plug');
+$('#onlyChains').checked = !!store.get('onlyChains'); $('#hideUnknown').checked = !!store.get('hideUnknown');
+setFuel(store.get('fuel') || 'E85');
 setMode(store.get('mode') || 'trip');
 const lastNear = store.get('lastNear');
 if (lastNear) { if (lastNear.center) { chosen.center = lastNear.center; $('#center').value = lastNear.center.label; } $('#radius').value = lastNear.radius || '10'; }
@@ -928,7 +1049,6 @@ if (last) {
   Object.assign(chosen, {from: last.from, to: last.to, via: last.via});
   $('#from').value = last.from?.label || ''; $('#to').value = last.to?.label || '';
   if (last.via) { $('#via').value = last.via.label; $('#viaWrap').style.display = 'block'; $('#addVia').style.display = 'none'; }
-  $('#corridor').value = last.corridor || '3';
 }
 </script>
 </body>
