@@ -571,6 +571,12 @@ function renderList() {
     detour: (a, b) => (isAvail(b) - isAvail(a)) || (a.detour ? a.detour.s : 1e9) - (b.detour ? b.detour.s : 1e9) || a.off_route_km - b.off_route_km,
   }[sortBy];
   const showNA = $('#showNA').checked;
+  // Scroll anchoring: keep the selected station (or the first visible one) at the same place on screen while the list
+  // re-renders/re-sorts as detours and road distances arrive, so nothing jumps away under the user's finger.
+  const vh = innerHeight, cur = [...document.querySelectorAll('#list .st')];
+  const visible = el => { const r = el.getBoundingClientRect(); return r.bottom > 60 && r.top < vh; };
+  const anchorEl = cur.find(el => el.dataset.id === selId && visible(el)) || cur.find(visible);
+  const anchor = anchorEl ? {id: anchorEl.dataset.id, top: anchorEl.getBoundingClientRect().top} : null;
   $('#list').innerHTML = stations.filter(s => showNA || isAvail(s)).sort(cmp).map(s => `
     <div class="st ${s.id === selId ? 'sel' : ''} ${isAvail(s) ? '' : 'na'}" data-id="${s.id}">
       <div>${title(s) ? `<div><b>${esc(title(s))}</b></div><div class="meta">${esc(s.address)}, ${esc(s.cp)} ${esc(s.city)}</div>`
@@ -585,6 +591,11 @@ function renderList() {
         ${s.motorway ? `<span class="tag">${t('motorway')}</span>` : ''}${s.h24 ? `<span class="tag">${t('24/7 card')}</span>` : ''}
         ${s.id === selId ? '' : `<span class="nav" style="margin-left:auto">${navLinks(s)}</span>`}
       </div>${s.id === selId ? details(s) : ''}</div>`).join('') || `<div class="note" style="padding:12px">${t('No stations to show.')}</div>`;
+  if (anchor) {
+    const el = document.querySelector(`#list .st[data-id="${anchor.id}"]`);
+    const delta = el ? el.getBoundingClientRect().top - anchor.top : 0;
+    if (Math.abs(delta) > 1) landscape.matches ? (document.querySelector('.side').scrollTop += delta) : window.scrollBy(0, delta);
+  }
 }
 function details(s) {
   const when = iso => new Date(iso).toLocaleString(lang === 'fr' ? 'fr-FR' : 'en-GB', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'});
