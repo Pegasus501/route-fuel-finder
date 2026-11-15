@@ -583,6 +583,66 @@ def compute_detour(trip, sid):
 _detour_pool = ThreadPoolExecutor(6)
 
 
+def is_usable(st, max_age_days=7):
+    """In stock, has a recent price, reachable in the direction of travel."""
+    if st.get("price") is None or st.get("opposite"):
+        return False
+    if st.get("out_since") and not st.get("maybe_restocked"):
+        return False
+    try:
+        age = time.time() - datetime.fromisoformat(st["updated"]).timestamp()
+    except (TypeError, ValueError, KeyError):
+        return False
+    return age <= max_age_days * 86400
+
+
+def ideal_candidates(trip, fuel, band_km):
+    """Stations up to band_km from the route worth checking: the cheapest ones plus the ones closest to the route.
+    Their real detour is computed so the client can build the time-vs-price trade-off list."""
+    pool = [s for s in stations_for(trip, fuel, band_km) if is_usable(s)]
+    cheapest = sorted(pool, key=lambda s: s["price"])[:20]
+    closest = sorted(pool, key=lambda s: s["off_route_km"])[:8]
+    chosen = {s["id"]: s for s in cheapest + closest}
+    futures = {sid: _detour_pool.submit(compute_detour, trip, sid) for sid in chosen}
+    out = []
+    for sid, f in futures.items():
+        try:
+            d = f.result(timeout=120)
+        except Exception as e:
+            print(f"[ideal] {sid}: {e!r}", flush=True)
+            continue
+        if d is not None:
+            out.append(dict(chosen[sid], detour=d))
+    return out
+
+
+def via_station_route(trip, sid):
+    """Full route geometry start -> (vias) -> station -> end, for drawing the alternative path."""
+    with _lock:
+        s = _stations.get(sid)
+    if s is None:
+        return None
+    pts = list(trip.points)
+    n = trip.index.nearest(s["lon"], s["lat"], 30)
+    along = n["along_km"] if n else 0
+    # insert the station between the waypoints it falls between along the route
+    pos = len(pts) - 1
+    for i in range(1, len(pts) - 1):
+        m = trip.index.nearest(pts[i][0], pts[i][1], 50)
+        if m and along < m["along_km"]:
+            pos = i
+            break
+    pts.insert(pos, (s["lon"], s["lat"]))
+    try:
+        r = ign_route(pts, steps=False)
+        coords, dur, dist = r["geometry"]["coordinates"], r["duration"], r["distance"]
+    except Exception as e:
+        print(f"[via] IGN failed ({e}), trying OSRM", flush=True)
+        rt = osrm_route(pts, annotations=False)
+        coords, dur, dist = rt["geometry"]["coordinates"], rt["duration"], rt["distance"]
+    return {"route": simplify(coords, 2000), "duration_s": dur, "distance_m": dist}
+
+
 # ================================================================ HTTP
 class Handler(BaseHTTPRequestHandler):
     server_version = "fuel-route"
@@ -625,6 +685,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.api_detours(q)
             if u.path == "/api/nearby":
                 return self.api_nearby(q)
+            if u.path in ("/api/ideal", "/api/via"):
+                trip = find_trip(q.get("trip", [""])[0])
+                if trip is None:
+                    return self.send_json({"error": "Trip expired, search again"}, 410)
+                if u.path == "/api/via":
+                    return self.send_json(via_station_route(trip, q["id"][0]) or {"error": "Unknown station"})
+                fuel = q.get("fuel", ["E85"])[0]
+                if fuel not in FUELS:
+                    return self.send_json({"error": "Unknown fuel"}, 400)
+                band = min(max(float(q.get("band", ["15"])[0]), 1), 25)
+                return self.send_json({"band": band, "stations": ideal_candidates(trip, fuel, band)})
             if u.path == "/api/status":
                 return self.send_json({"stations": len(_stations), "feed_updated": _stations_loaded_at, "https": tls.available()})
             return self.serve_static(u.path)

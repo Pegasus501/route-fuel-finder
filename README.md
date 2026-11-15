@@ -7,6 +7,8 @@ with their latest official prices and stock outages.
 - **Trip mode:** enter a start, an end (and an optional stop). Stations within 1–20 km of the route are listed in
   driving order, with the **real detour time** (leave the route, refuel, come back), so stations on the wrong side of a dual
   carriageway show their true cost. Motorway service stations on the opposite carriageway are flagged and never suggested.
+- **Ideal stops:** also checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
+  then each slower-but-cheaper option with its real saving for your fill, minus the fuel burnt on the extra km), and draws that path.
 - **Around a place:** search a radius around your location or an address, measured **by road** or **à vol d'oiseau**.
 - **Stock:** stations reporting a temporary outage are greyed out ("out of stock · 3 h"); prices older than 7 days are flagged.
 - **Brand names** (Esso, TotalEnergies, Leclerc…) are matched from OpenStreetMap; the Maps button opens the station's

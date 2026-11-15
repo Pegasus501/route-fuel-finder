@@ -55,6 +55,19 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .st.na .price{text-decoration:line-through}
 .price{font-size:20px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
 .price.best{color:var(--accent)}
+.dt{font-size:13px;font-weight:700;text-align:right;white-space:nowrap}
+.dt.zero{color:var(--accent)}
+.ideal h3{margin:0;font-size:15px}
+.ideal .hd{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.ideal .hd .meta input{width:52px;padding:4px 6px;font-size:13px;text-align:right}
+.opt{display:grid;grid-template-columns:1fr auto;gap:0 10px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;margin-top:6px;cursor:pointer;background:var(--bg)}
+.opt:hover{border-color:var(--accent)}
+.opt.sel{border-color:#f59e0b;box-shadow:0 0 0 1px #f59e0b}
+.opt .l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.opt .n{font-weight:600}
+.opt .r{text-align:right}
+.opt .big{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
+.opt .save{color:var(--accent);font-weight:700}
 .meta{color:var(--muted);font-size:12px}
 .tags{grid-column:1/-1;display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:3px}
 .tag{font-size:11px;padding:2px 7px;border-radius:99px;background:var(--chip);white-space:nowrap}
@@ -123,6 +136,11 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
       <div style="margin-top:10px"><button class="go" id="go">Find stations</button></div>
     </div>
     <div class="card" id="summary" style="display:none"></div>
+    <div class="card ideal" id="idealCard" style="display:none">
+      <div class="hd"><h3>✨ Ideal stops</h3>
+        <span class="meta">fill <input type="number" id="litres" min="5" max="150" value="40"> L · car uses <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km</span></div>
+      <div id="ideal"></div>
+    </div>
     <div class="card list" id="listCard" style="display:none">
       <div class="sortbar"><span class="meta">Sort:</span>
         <button data-s="along" class="on">Along route</button><button data-s="price">Cheapest</button><button data-s="detour">Smallest detour</button>
@@ -141,6 +159,7 @@ let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortB
 let trip = null, gen = 0, fuel = 'E85', lastData = null, lastPts = null;
 const chosen = {from: null, via: null, to: null, center: null};
 let mode = 'trip', rmode = 'drive';
+let ideal = null, idealSel = null, altLayer = L.layerGroup().addTo(map);
 function setMode(m) {
   mode = m === 'near' ? 'near' : 'trip'; store.set('mode', mode);
   document.querySelectorAll('#modeTabs button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
@@ -170,6 +189,7 @@ function clearResults() {
   gen++; lastPts = null; lastData = null; stations = [];
   if (routeLayer) { map.removeLayer(routeLayer); routeLayer = null; }
   markers.clearLayers(); $('#summary').style.display = 'none'; $('#listCard').style.display = 'none';
+  clearIdeal();
 }
 
 // ---------- autocomplete
@@ -260,6 +280,7 @@ async function search() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       if (my !== gen) return;
+      clearIdeal();
       lastPts = [c]; lastData = data; trip = data.trip;
       stations = data.stations; stations.forEach(s => { if (s.drive !== undefined) s.detour = s.drive; });
       store.set('lastNear', {center: c.label?.startsWith('My location') ? null : c, radius: $('#radius').value});
@@ -277,8 +298,10 @@ async function search() {
     lastPts = pts; lastData = data; trip = data.trip;
     stations = data.stations;
     store.set('last', {from, to, via, corridor: $('#corridor').value});
+    clearIdeal();
     drawRoute(); drawMarkers(); renderAll();
     fetchDetours(my);
+    fetchIdeal(my);
   } catch (e) {
     if (my === gen) showMsg(e.message || 'Something went wrong', true);
   } finally { if (my === gen) { btn.disabled = false; btn.textContent = 'Find stations'; } }
@@ -340,7 +363,7 @@ function drawMarkers() {
     markerById[s.id] = m;
   });
 }
-function renderAll() { renderSummary(); renderList(); }
+function renderAll() { renderSummary(); renderList(); renderIdeal(); }
 
 function where(s) { return mode === 'near' ? `${s.crow_km.toFixed(1)} km away` : `km ${Math.round(s.along_km)}`; }
 function renderSummary() {
@@ -399,6 +422,7 @@ function popupHtml(s) {
   return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : 'no price'}</b> ${FUEL_NAMES[fuel]}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
     <div class="tags">${statusTags(s)}</div>
     <small>${mode === 'near' ? `${where(s)} · ${detourText(s.detour)}` : `km ${Math.round(s.along_km)} on route · ${s.opposite ? 'not reachable in your direction' : detourText(s.detour)}${s.detour ? ` (${s.detour.km} km)` : ''}`}</small>
+    ${mode === 'trip' && s.detour && !s.opposite ? `<div class="meta">Trip with this stop: <b>${hm(lastData.duration_s + s.detour.s)}</b> instead of ${hm(lastData.duration_s)}</div>` : ''}
     <div class="nav" style="margin-top:4px">${navLinks(s)}</div>`;
 }
 
@@ -415,12 +439,12 @@ function renderList() {
     <div class="st ${s.id === selId ? 'sel' : ''} ${isAvail(s) ? '' : 'na'}" data-id="${s.id}">
       <div>${title(s) ? `<div><b>${esc(title(s))}</b></div><div class="meta">${esc(s.address)}, ${esc(s.cp)} ${esc(s.city)}</div>`
                    : `<div><b>${esc(s.city)}</b> <span class="meta">${esc(s.cp)}</span></div><div class="meta">${esc(s.address)}</div>`}</div>
-      <div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>
+      <div><div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>${shortDetour(s)}</div>
       <div class="tags">
         ${s === cheapest ? '<span class="tag cheap">cheapest</span>' : ''}${s === nearest ? `<span class="tag near">${mode === 'near' ? 'closest' : 'smallest detour'}</span>` : ''}
         ${statusTags(s)}
         <span class="tag">${where(s)}</span>
-        ${s.opposite || !detourText(s.detour) ? '' : `<span class="tag">${detourText(s.detour)}</span>`}
+        ${s.opposite || !detourText(s.detour) || mode === 'trip' ? '' : `<span class="tag">${detourText(s.detour)}</span>`}
         ${s.motorway ? '<span class="tag">motorway</span>' : ''}${s.h24 ? '<span class="tag">24/7 card</span>' : ''}
         <span class="nav" style="margin-left:auto">${navLinks(s)}</span>
       </div></div>`).join('') || '<div class="note" style="padding:12px">No stations to show.</div>';
@@ -435,6 +459,89 @@ function select(id, pan) {
   if (m && pan) { map.setView(m.getLatLng(), Math.max(map.getZoom(), 14)); m.openPopup(); if (innerWidth < 860) $('#map').scrollIntoView({behavior: 'smooth'}); }
   else document.querySelector(`.st[data-id="${id}"]`)?.scrollIntoView({block: 'nearest'});
 }
+
+function hm(sec) { const m = Math.round(sec / 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`; }
+function mins(d) { const m = Math.round(d.s / 60); return m < 1 ? '+0 min' : `+${m} min`; }
+function shortDetour(s) {
+  if (mode !== 'trip') return s.detour ? `<div class="dt">${Math.max(1, Math.round(s.detour.s / 60))} min</div>` : '';
+  if (s.opposite) return '<div class="dt meta">–</div>';
+  if (s.detour === undefined) return '<div class="dt meta">…</div>';
+  if (!s.detour) return '';
+  return `<div class="dt ${s.detour.s < 60 ? 'zero' : ''}" title="extra driving time to stop here">${mins(s.detour)}</div>`;
+}
+
+// ---------- ideal stops: best time-vs-price trade-offs, including stations off the normal route
+function clearIdeal() { ideal = null; idealSel = null; altLayer.clearLayers(); $('#idealCard').style.display = 'none'; }
+async function fetchIdeal(my) {
+  ideal = 'loading'; renderIdeal();
+  try {
+    const r = await (await fetch(`/api/ideal?trip=${encodeURIComponent(trip)}&fuel=${fuel}&band=15`)).json();
+    if (my !== gen) return;
+    if (r.error) throw new Error(r.error);
+    ideal = r.stations;
+    const byId = Object.fromEntries(stations.map(s => [s.id, s]));
+    ideal.forEach(c => { if (byId[c.id] && byId[c.id].detour === undefined) byId[c.id].detour = c.detour; });
+    renderAll(); drawMarkers();
+  } catch { if (my === gen) ideal = 'error'; }
+  if (my === gen) renderIdeal();
+}
+function idealOptions() {
+  const L_ = Math.max(1, +$('#litres').value || 40), cons = Math.max(1, +$('#cons').value || 7);
+  const pool = {};
+  [...(Array.isArray(ideal) ? ideal : []), ...stations.filter(s => isAvail(s) && isFresh(s) && s.detour)].forEach(s => { pool[s.id] = s; });
+  const all = Object.values(pool).sort((a, b) => a.detour.s - b.detour.s || a.price - b.price);
+  if (!all.length) return [];
+  // Pareto frontier: each next option is slower but strictly cheaper than every quicker one
+  const front = [];
+  for (const s of all) if (!front.length || s.price < front[front.length - 1].price - 1e-9) front.push(s);
+  const q = front[0];
+  const opts = front.map(s => {
+    const extraKm = Math.max(0, s.detour.km - q.detour.km), extraMin = Math.max(0, Math.round((s.detour.s - q.detour.s) / 60));
+    const saving = (q.price - s.price) * L_ - extraKm * cons / 100 * s.price;
+    return {s, extraKm, extraMin, saving};
+  });
+  // keep the quickest, then only options that save meaningfully more (after the extra fuel burnt) than every quicker one
+  const kept = [opts[0]];
+  for (const o of opts.slice(1)) if (o.saving >= kept[kept.length - 1].saving + 0.5) kept.push(o);
+  return kept.slice(0, 5);
+}
+function renderIdeal() {
+  const card = $('#idealCard');
+  if (mode !== 'trip' || ideal === null) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  if (ideal === 'loading') { $('#ideal').innerHTML = '<div class="note">Checking stations up to 15 km off your route for better deals…</div>'; return; }
+  if (ideal === 'error') { $('#ideal').innerHTML = '<div class="note err">Could not compute ideal stops, try again.</div>'; return; }
+  const opts = idealOptions();
+  if (!opts.length) { $('#ideal').innerHTML = '<div class="note">No station with a recent price found near this route.</div>'; return; }
+  const base = lastData.duration_s;
+  $('#ideal').innerHTML = opts.map((o, i) => {
+    const s = o.s, label = i === 0 ? '⚡ Quickest stop' : (i === opts.length - 1 && opts.length > 2 ? '💰 Cheapest worth it' : `Option ${i + 1}`);
+    const off = s.off_route_km > +$('#corridor').value ? ` · ${s.off_route_km.toFixed(1)} km off route` : '';
+    return `<div class="opt ${idealSel === s.id ? 'sel' : ''}" data-id="${s.id}">
+      <div><div class="l">${label}</div><div class="n">${esc(title(s) || s.city)}</div>
+        <div class="meta">${esc(s.city)} · km ${Math.round(s.along_km)}${off}</div></div>
+      <div class="r"><div class="big">${s.price.toFixed(3)} €</div>
+        <div class="meta"><b>${mins(s.detour)}</b> · trip ${hm(base + s.detour.s)}</div>
+        ${i ? `<div class="meta"><span class="save">saves ${o.saving.toFixed(2)} €</span> for ${o.extraMin} min more</div>` : ''}</div>
+    </div>`;
+  }).join('') + `<div class="note">Savings compare with the quickest stop for a ${+$('#litres').value || 40} L fill, minus the fuel burnt on the extra km. Tap an option to see its path.</div>`;
+  $('#ideal').querySelectorAll('.opt').forEach(el => el.onclick = () => showVia(opts.find(o => o.s.id === el.dataset.id).s));
+}
+async function showVia(s) {
+  idealSel = s.id; renderIdeal(); altLayer.clearLayers();
+  if (!markerById[s.id]) {
+    L.marker([s.lat, s.lon], {zIndexOffset: 2000, icon: L.divIcon({className: '', html: `<div class="pin best"><span>${s.price.toFixed(2)}</span></div>`, iconSize: [32, 32], iconAnchor: [16, 32], popupAnchor: [0, -30]})})
+      .bindPopup(() => popupHtml(s)).addTo(altLayer).openPopup();
+  } else { markerById[s.id].openPopup(); selId = s.id; renderList(); }
+  try {
+    const r = await (await fetch(`/api/via?trip=${encodeURIComponent(trip)}&id=${s.id}`)).json();
+    if (r.error || idealSel !== s.id) return;
+    const line = L.polyline(r.route.map(c => [c[1], c[0]]), {color: '#f59e0b', weight: 5, opacity: .9, dashArray: '8 8'}).addTo(altLayer);
+    map.fitBounds(line.getBounds().extend([s.lat, s.lon]), {padding: [30, 30]});
+  } catch {}
+  if (innerWidth < 860) $('#map').scrollIntoView({behavior: 'smooth'});
+}
+['#litres', '#cons'].forEach(id => $(id).addEventListener('input', () => { store.set('fill', {l: $('#litres').value, c: $('#cons').value}); renderIdeal(); }));
 
 // ---------- progressive detour calculation
 async function fetchDetours(my) {
@@ -467,6 +574,7 @@ fetch('/api/status').then(r => r.json()).then(s => {
   if (s.feed_updated) $('#feed').textContent = `Official government prices & stock outages · refreshed ${new Date(s.feed_updated * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
 }).catch(() => {});
 setRmode(store.get('rmode') || 'drive');
+const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; }
 setMode(store.get('mode') || 'trip');
 const lastNear = store.get('lastNear');
 if (lastNear) { if (lastNear.center) { chosen.center = lastNear.center; $('#center').value = lastNear.center.label; } $('#radius').value = lastNear.radius || '10'; }
