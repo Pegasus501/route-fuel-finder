@@ -4,7 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#1f8a4c">
-<title>Route Fuel Finder</title>
+<title>Rat-Station</title>
+<meta name="description" content="Le système de recherche de station essence pour les gros rats">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🐭%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
@@ -16,6 +18,7 @@ header{padding:14px 16px 4px;display:flex;justify-content:space-between;align-it
 #langBtn{flex:0 0 auto;padding:7px 12px;font-weight:700;font-size:13px}
 h1{margin:0;font-size:20px}
 h1 span{color:var(--accent)}
+.tagline{font-size:13px;font-weight:600;color:var(--ink);opacity:.8}
 .sub{color:var(--muted);font-size:13px}
 /* portrait / narrow: one column, map under the search form, floating mini-map when scrolled past */
 .layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;padding:12px 16px 16px}
@@ -78,10 +81,8 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .opt .l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 .opt .n{font-weight:600}
 .opt .r{text-align:right;max-width:60%}
-@media (max-width:520px){
-  .opt{grid-template-columns:minmax(0,1fr)}
-  .opt .r{text-align:left;max-width:none;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;margin-top:4px}
-}
+.opt{grid-template-columns:minmax(0,1fr)}
+.opt .r{text-align:left;max-width:none;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;margin-top:4px}
 .opt .big{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 .opt .save{color:var(--accent);font-weight:700}
 .opt .loss{color:var(--bad);font-weight:700}
@@ -130,7 +131,8 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
 </head>
 <body>
 <header>
-  <div><h1>⛽ <span>Route</span> Fuel Finder</h1>
+  <div><h1>🐭⛽ <span>Rat</span>-Station</h1>
+  <div class="tagline" data-i18n="The fuel station finder for big rats">Le système de recherche de station essence pour les gros rats</div>
   <div class="sub" id="feed" data-i18n="Official French fuel price &amp; stock data">Official French fuel price &amp; stock data</div></div>
   <button class="ghost" id="langBtn" title="Français / English">🇫🇷 FR</button>
 </header>
@@ -194,7 +196,7 @@ let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortB
 let trip = null, gen = 0, fuel = 'E85', lastData = null, lastPts = null;
 const chosen = {from: null, via: null, to: null, center: null};
 let mode = 'trip', rmode = 'drive';
-let ideal = null, idealSel = null, altLayer = L.layerGroup().addTo(map);
+let ideal = null, idealSel = null, altLayer = L.layerGroup().addTo(map), altRoutesLayer = L.layerGroup().addTo(map), altCount = 0;
 let tollExits = null, traffic = null, trafficLayer = L.layerGroup().addTo(map), trafficVia = {};
 const exitsToll = s => !!(tollExits && tollExits.has(s.id));
 const peage = () => Math.max(0, +$('#peage').value || 0);
@@ -215,7 +217,7 @@ function setRmode(r) {
 const store = {get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }};
 
 // ---------- English / French
-let lang = store.get('lang') || ((navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+let lang = store.get('lang') === 'en' ? 'en' : 'fr';   // French by default; the choice is remembered on this device
 const FR = {
   'Official French fuel price & stock data': 'Prix et stocks officiels des carburants en France',
   'Official government prices & stock outages · refreshed {0}': 'Prix et ruptures officiels · mis à jour à {0}',
@@ -271,6 +273,10 @@ const FR = {
   'Traffic jam': 'Bouchon', 'Road works': 'Travaux', 'Road closed': 'Route fermée', 'Slow traffic': 'Ralentissement',
   'with traffic…': 'avec trafic…', 'with traffic: <b>+{0} min</b> · trip {1}': 'avec trafic : <b>+{0} min</b> · trajet {1}',
   'quickest stop': 'arrêt le plus rapide', 'See on map': 'Voir sur la carte',
+  'The fuel station finder for big rats': 'Le système de recherche de station essence pour les gros rats',
+  'Exploring alternative routes and stations up to 15 km off your route for better deals…': 'Exploration d\'itinéraires alternatifs et des stations jusqu\'à 15 km de votre trajet…',
+  'Alternative route {0}': 'Itinéraire alternatif {0}', 'via alternative route {0}': 'par l\'itinéraire alternatif {0}',
+  'Also explored {0} different routes (grey dashed on the map).': '{0} itinéraires différents explorés aussi (pointillés gris sur la carte).',
   'Show whichever of SP95 or SP95-E10 is cheaper at each station': 'Affiche le moins cher entre SP95 et SP95-E10 dans chaque station',
   '{0}: out of stock': '{0} : en rupture', 'also {0}: {1} €': 'aussi {0} : {1} €',
   'Price updated {0}': 'Prix mis à jour le {0}', 'Outage reported {0}': 'Rupture signalée le {0}', 'saves {0} € vs quickest stop': 'économise {0} € vs l\'arrêt le plus rapide',
@@ -641,7 +647,7 @@ function shortDetour(s) {
 }
 
 // ---------- ideal stops: best time-vs-price trade-offs, including stations off the normal route
-function clearIdeal() { ideal = null; idealSel = null; altLayer.clearLayers(); $('#idealCard').style.display = 'none'; tollExits = null; traffic = null; trafficVia = {}; trafficLayer.clearLayers(); }
+function clearIdeal() { ideal = null; idealSel = null; altLayer.clearLayers(); altRoutesLayer.clearLayers(); altCount = 0; $('#idealCard').style.display = 'none'; tollExits = null; traffic = null; trafficVia = {}; trafficLayer.clearLayers(); }
 async function fetchIdeal(my) {
   ideal = 'loading'; renderIdeal();
   try {
@@ -649,6 +655,10 @@ async function fetchIdeal(my) {
     if (my !== gen) return;
     if (r.error) throw new Error(r.error);
     ideal = r.stations;
+    altRoutesLayer.clearLayers(); altCount = (r.alternatives || []).length;
+    (r.alternatives || []).forEach((a, i) => L.polyline(a.map(c => [c[1], c[0]]), {color: '#64748b', weight: 4, opacity: .55, dashArray: '2 8'})
+      .bindTooltip(t('Alternative route {0}', i + 1), {sticky: true}).addTo(altRoutesLayer));
+    routeLayer?.bringToFront();
     const byId = Object.fromEntries(stations.map(s => [s.id, s]));
     ideal.forEach(c => { if (byId[c.id] && byId[c.id].detour === undefined) byId[c.id].detour = c.detour; });
     renderAll(); drawMarkers();
@@ -680,24 +690,25 @@ function renderIdeal() {
   const card = $('#idealCard');
   if (mode !== 'trip' || ideal === null) { card.style.display = 'none'; return; }
   card.style.display = 'block';
-  if (ideal === 'loading') { $('#ideal').innerHTML = `<div class="note">${t('Checking stations up to 15 km off your route for better deals…')}</div>`; return; }
+  if (ideal === 'loading') { $('#ideal').innerHTML = `<div class="note">${t('Exploring alternative routes and stations up to 15 km off your route for better deals…')}</div>`; return; }
   if (ideal === 'error') { $('#ideal').innerHTML = `<div class="note err">${t('Could not compute ideal stops, try again.')}</div>`; return; }
   const opts = idealOptions();
   if (!opts.length) { $('#ideal').innerHTML = `<div class="note">${t('No station with a recent price found near this route.')}</div>`; return; }
   const base = lastData.duration_s;
   $('#ideal').innerHTML = opts.map((o, i) => {
     const s = o.s, label = i === 0 ? t('⚡ Quickest stop') : (i === opts.length - 1 && opts.length > 2 ? t('💰 Cheapest worth it') : t('Option {0}', i + 1));
-    const off = s.off_route_km > +$('#corridor').value ? t(' · {0} km off route', s.off_route_km.toFixed(1)) : '';
+    const off = s.route > 0 ? '' : s.off_route_km > +$('#corridor').value ? t(' · {0} km off route', s.off_route_km.toFixed(1)) : '';
+    const altTag = s.route > 0 ? `<div style="margin-top:3px"><span class="tag near">🛣 ${t('via alternative route {0}', s.route)}</span></div>` : '';
     return `<div class="opt ${idealSel === s.id ? 'sel' : ''}" data-id="${s.id}">
       <div><div class="l">${label}</div><div class="n">${esc(title(s) || s.city)}</div>
-        <div class="meta">${esc(s.city)} · ${where(s)}${off}</div></div>
+        <div class="meta">${esc(s.city)} · ${where(s)}${off}</div>${altTag}</div>
       <div class="r"><div class="big">${s.price.toFixed(3)} €${s.variant ? ` <span class="meta">${fuelName(s.variant)}</span>` : ''}</div>
         <div class="meta"><b>${mins(s.detour)}</b> · ${t('trip {0}', hm(base + s.detour.s))}</div>
         ${trafficLine(s)}
         ${i ? `<div class="meta"><span class="save">${t('saves {0} €', o.saving.toFixed(2))}</span> ${t('for {0} min more', o.extraMin)}</div>` : ''}</div>
       ${exitsToll(s) ? `<div style="grid-column:1/-1;margin-top:4px"><span class="tag toll">${t('⚠ leaves the toll motorway · ~{0} € extra péage', peage().toFixed(2))}${i ? t(' (included in saving)') : ''}</span></div>` : ''}
     </div>`;
-  }).join('') + `<div class="note">${t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', +$('#litres').value || 40)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}</div>`;
+  }).join('') + `<div class="note">${t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', +$('#litres').value || 40)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}${altCount ? ' ' + t('Also explored {0} different routes (grey dashed on the map).', altCount) : ''}</div>`;
   $('#ideal').querySelectorAll('.opt').forEach(el => el.onclick = () => showVia(opts.find(o => o.s.id === el.dataset.id).s));
   if (traffic) { const need = opts.map(o => o.s.id).filter(id => !(id in trafficVia)); if (need.length) fetchTrafficVia(need); }
 }

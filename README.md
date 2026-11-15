@@ -1,13 +1,16 @@
-# Route Fuel Finder ⛽
+# Rat-Station 🐭⛽
 
-A small self-hosted website that finds fuel stations in **France** — along a car trip or around a place —
+*Le système de recherche de station essence pour les gros rats.*
+
+A small self-hosted website (French by default, with an English switch) that finds fuel stations in **France** — along a car trip or around a place —
 with their latest official prices and stock outages.
 
 - **Fuels:** E85 (Superéthanol), Diesel (Gazole), SP95-E10, SP95, SP98, or "SP95 + E10" (whichever of the two is in stock and cheaper at each station)
 - **Trip mode:** enter a start, an end (and an optional stop). Stations within 1–20 km of the route are listed in
   driving order, with the **real detour time** (leave the route, refuel, come back), so stations on the wrong side of a dual
   carriageway show their true cost. Motorway service stations on the opposite carriageway are flagged and never suggested.
-- **Ideal stops:** also checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
+- **Ideal stops:** also explores up to 3 genuinely different routes to the destination (TomTom / OSRM alternatives, or forced
+  detours left and right of the main route) and checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
   then each slower-but-cheaper option with its real saving for your fill, minus the fuel burnt on the extra km), and draws that path.
 - **Toll roads:** flags stations that make you leave a toll motorway ("⚠ leaves toll motorway"), and counts the
   estimated extra péage (adjustable, default 1.50 €) in the savings, telling you when a cheaper station ends up costing more.

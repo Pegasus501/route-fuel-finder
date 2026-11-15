@@ -524,6 +524,8 @@ class Trip:
         self.tolls = _bg_pool.submit(build_toll_index, points)
         self.traffic = _bg_pool.submit(tomtom_route, points) if TOMTOM_KEY else None
         self.traffic_via = {}        # station id -> seconds with traffic via that station
+        self.alts = None             # alternative routes (computed on demand)
+        self.lock = threading.Lock()
 
     def exits_toll(self, s, tolls):
         """True if stopping at s means leaving a toll motorway (and paying to get back on)."""
@@ -725,24 +727,148 @@ def is_usable(st, max_age_days=7):
     return age <= max_age_days * 86400
 
 
-def ideal_candidates(trip, fuel, band_km):
-    """Stations up to band_km from the route worth checking: the cheapest ones plus the ones closest to the route.
-    Their real detour is computed so the client can build the time-vs-price trade-off list."""
-    pool = [s for s in stations_for(trip, fuel, band_km) if is_usable(s)]
+# ================================================================ alternative routes
+def _route_coords_tomtom(points):
+    locs = ":".join("%.6f,%.6f" % (lat, lon) for lon, lat in points)
+    params = {"key": TOMTOM_KEY, "maxAlternatives": 3, "alternativeType": "anyRoute", "traffic": "true",
+              "travelMode": "car", "routeType": "fastest"}
+    r = get_json(f"https://api.tomtom.com/routing/1/calculateRoute/{locs}/json?" + urllib.parse.urlencode(params), 30)
+    return [[[p["longitude"], p["latitude"]] for leg in rt["legs"] for p in leg["points"]] for rt in r["routes"][1:]]
+
+
+def _route_coords_osrm(points):
+    OSRM_LIMIT.wait()
+    coords = ";".join("%.6f,%.6f" % p for p in points)
+    r = get_json(f"https://router.project-osrm.org/route/v1/driving/{coords}?alternatives=3&overview=full&geometries=geojson", 45)
+    return [rt["geometry"]["coordinates"] for rt in r["routes"][1:]]
+
+
+def _route_coords_forced(trip):
+    """Force genuinely different corridors: route through points well to the left and right of the main route's middle."""
+    idx = trip.index
+    total = idx.cum[-1]
+    (sx, sy), (ex, ey) = idx.pts[0], idx.pts[-1]
+    dx, dy = ex - sx, ey - sy
+    L = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / L, dx / L                        # unit normal (km space)
+    off = max(15.0, min(60.0, 0.12 * total))
+    out = []
+    for frac in (0.5,):
+        mx, my, _ = idx.point_at(total * frac)
+        for sign in (1, -1):
+            lon = mx + sign * nx * off / idx.kx
+            lat = my + sign * ny * off / idx.ky
+            pts = list(trip.points[:-1]) + [(lon, lat)] + [trip.points[-1]]
+            try:
+                r = ign_route(pts, steps=False)
+                out.append(r["geometry"]["coordinates"])
+            except Exception as e:
+                print(f"[alt] forced route failed: {e!r}", flush=True)
+    return out
+
+
+def _overlap(coords, indexes, tol_km=1.5):
+    """Share of the route (sampled ~every 2 km) lying within tol_km of any of the given routes."""
+    lat0 = coords[len(coords) // 2][1]
+    kx = 111.32 * math.cos(math.radians(lat0))
+    sample, acc, last = [], 0.0, None
+    for c in coords:
+        if last is not None:
+            acc += math.hypot((c[0] - last[0]) * kx, (c[1] - last[1]) * 110.574)
+        if last is None or acc >= 2:
+            sample.append(c); acc = 0.0
+        last = c
+    near = sum(1 for c in sample if any(ix.nearest(c[0], c[1], tol_km) for ix in indexes))
+    return near / max(1, len(sample))
+
+
+def alternative_routes(trip, max_alts=3):
+    """Genuinely different paths to the destination (each <60% shared with the main route and with each other)."""
+    with trip.lock:
+        if trip.alts is not None:
+            return trip.alts
+        cands = []
+        sources = ([_route_coords_tomtom] if TOMTOM_KEY else []) + [_route_coords_osrm]
+        for src in sources:
+            try:
+                cands += src(trip.points)
+            except Exception as e:
+                print(f"[alt] {src.__name__} failed: {e!r}", flush=True)
+        kept = []
+        def consider(coords):
+            if len(coords) < 2 or len(kept) >= max_alts:
+                return
+            if _overlap(coords, [trip.index] + [k["index"] for k in kept]) < 0.6:
+                kept.append({"coords": coords, "index": RouteIndex({"coords": coords, "tcum": [0.0] * len(coords)})})
+        for c in cands:
+            consider(c)
+        if len(kept) < 2:
+            for c in _route_coords_forced(trip):
+                consider(c)
+        trip.alts = kept
+        print(f"[alt] {len(cands)} candidate alternatives, kept {len(kept)}", flush=True)
+        return kept
+
+
+def compute_full_detour(trip, sid):
+    """Extra time/distance of the whole trip when going through the station (any path, not just near the main route)."""
+    if sid in trip.detours:
+        return trip.detours[sid]
+    with _lock:
+        s = _stations.get(sid)
+    if s is None:
+        return None
+    dur, dist = via_route(points_via(trip, s))
+    res = {"s": max(0, round(dur - trip.route["duration"])), "km": round(max(0.0, (dist - trip.route["distance"]) / 1000), 1)}
+    trip.detours[sid] = res
+    return res
+
+
+def ideal_candidates(trip, fuel, band_km, alt_band_km=10):
+    """Stations worth checking for the time-vs-price trade-off list: along the main route (up to band_km) AND along
+    genuinely different alternative paths (up to alt_band_km). Each gets its real extra trip time."""
+    pool = [dict(s, route=0) for s in stations_for(trip, fuel, band_km) if is_usable(s)]
     cheapest = sorted(pool, key=lambda s: s["price"])[:20]
     closest = sorted(pool, key=lambda s: s["off_route_km"])[:8]
     chosen = {s["id"]: s for s in cheapest + closest}
-    futures = {sid: _detour_pool.submit(compute_detour, trip, sid) for sid in chosen}
+    jobs = {sid: (compute_detour, trip, sid) for sid in chosen}
+
+    alts = alternative_routes(trip)
+    in_main = {s["id"] for s in pool}
+    with _lock:
+        stations = list(_stations.values())
+    for i, alt in enumerate(alts, start=1):
+        found = []
+        for s in stations:
+            if s["id"] in in_main or s["id"] in chosen:
+                continue
+            f = fuel_info(s, fuel)
+            if not f:
+                continue
+            n = alt["index"].nearest(s["lon"], s["lat"], alt_band_km)
+            if n is None:
+                continue
+            st = station_view(s, f)
+            if not is_usable(st):
+                continue
+            st.update(route=i, along_km=round(n["along_km"], 1), alt_off_km=round(n["off_km"], 2),
+                      off_route_km=None, opposite=False)
+            found.append(st)
+        for st in sorted(found, key=lambda x: x["price"])[:6]:
+            chosen[st["id"]] = st
+            jobs[st["id"]] = (compute_full_detour, trip, st["id"])
+
+    futures = {sid: _detour_pool.submit(*job) for sid, job in jobs.items()}
     out = []
     for sid, f in futures.items():
         try:
-            d = f.result(timeout=120)
+            d = f.result(timeout=180)
         except Exception as e:
             print(f"[ideal] {sid}: {e!r}", flush=True)
             continue
         if d is not None:
             out.append(dict(chosen[sid], detour=d))
-    return out
+    return out, [simplify(a["coords"], 800) for a in alts]
 
 
 def points_via(trip, s):
@@ -868,7 +994,8 @@ class Handler(BaseHTTPRequestHandler):
                 if fuel not in FUEL_CHOICES:
                     return self.send_json({"error": "Unknown fuel"}, 400)
                 band = min(max(float(q.get("band", ["15"])[0]), 1), 25)
-                return self.send_json({"band": band, "stations": ideal_candidates(trip, fuel, band)})
+                cands, alts = ideal_candidates(trip, fuel, band)
+                return self.send_json({"band": band, "stations": cands, "alternatives": alts})
             if u.path == "/api/status":
                 return self.send_json({"stations": len(_stations), "feed_updated": _stations_loaded_at, "https": tls.available()})
             return self.serve_static(u.path)
