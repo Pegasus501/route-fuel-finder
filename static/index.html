@@ -12,7 +12,8 @@
 @media (prefers-color-scheme:dark){:root{--bg:#121614;--panel:#1b201e;--ink:#e8ece9;--muted:#9aa49f;--line:#2c3330;--accent:#3fbf75;--accent-ink:#0b1a12;--warn:#f59e0b;--bad:#f87171;--chip:#24302a;--blue:#60a5fa}}
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
-header{padding:14px 16px 4px}
+header{padding:14px 16px 4px;display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+#langBtn{flex:0 0 auto;padding:7px 12px;font-weight:700;font-size:13px}
 h1{margin:0;font-size:20px}
 h1 span{color:var(--accent)}
 .sub{color:var(--muted);font-size:13px}
@@ -76,7 +77,11 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .opt.sel{border-color:#f59e0b;box-shadow:0 0 0 1px #f59e0b}
 .opt .l{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
 .opt .n{font-weight:600}
-.opt .r{text-align:right}
+.opt .r{text-align:right;max-width:60%}
+@media (max-width:520px){
+  .opt{grid-template-columns:minmax(0,1fr)}
+  .opt .r{text-align:left;max-width:none;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;margin-top:4px}
+}
 .opt .big{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 .opt .save{color:var(--accent);font-weight:700}
 .opt .loss{color:var(--bad);font-weight:700}
@@ -119,59 +124,60 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 </head>
 <body>
 <header>
-  <h1>⛽ <span>Route</span> Fuel Finder</h1>
-  <div class="sub" id="feed">Official French fuel price &amp; stock data</div>
+  <div><h1>⛽ <span>Route</span> Fuel Finder</h1>
+  <div class="sub" id="feed" data-i18n="Official French fuel price &amp; stock data">Official French fuel price &amp; stock data</div></div>
+  <button class="ghost" id="langBtn" title="Français / English">🇫🇷 FR</button>
 </header>
 <div class="layout">
   <div class="side">
     <div class="card" id="formCard">
       <div class="fuels" id="fuels">
-        <button data-f="E85">E85</button><button data-f="Gazole">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button>
+        <button data-f="E85">E85</button><button data-f="Gazole" data-i18n="Diesel">Diesel</button><button data-f="E10">SP95-E10</button><button data-f="SP95">SP95</button><button data-f="SP98">SP98</button>
       </div>
-      <div class="tabs" id="modeTabs"><button data-m="trip" class="on">🚗 Trip</button><button data-m="near">📍 Around a place</button></div>
+      <div class="tabs" id="modeTabs"><button data-m="trip" class="on" data-i18n="🚗 Trip">🚗 Trip</button><button data-m="near" data-i18n="📍 Around a place">📍 Around a place</button></div>
       <div id="tripPanel">
-      <div class="field"><label>From</label>
-        <div class="inrow"><input id="from" placeholder="e.g. Paris" autocomplete="off"><button class="ghost" id="locate" title="Use my current location">📍</button></div>
+      <div class="field"><label data-i18n="From">From</label>
+        <div class="inrow"><input id="from" placeholder="e.g. Paris" data-i18n-ph="e.g. Paris" autocomplete="off"><button class="ghost" id="locate" title="Use my current location" data-i18n-title="Use my current location">📍</button></div>
         <div class="sugg"></div></div>
-      <div class="field" id="viaWrap" style="display:none"><label>Via (optional)</label><input id="via" placeholder="Stop along the way" autocomplete="off"><div class="sugg"></div></div>
-      <div class="field"><label>To</label><input id="to" placeholder="e.g. Lyon" autocomplete="off"><div class="sugg"></div></div>
+      <div class="field" id="viaWrap" style="display:none"><label data-i18n="Via (optional)">Via (optional)</label><input id="via" placeholder="Stop along the way" data-i18n-ph="Stop along the way" autocomplete="off"><div class="sugg"></div></div>
+      <div class="field"><label data-i18n="To">To</label><input id="to" placeholder="e.g. Lyon" data-i18n-ph="e.g. Lyon" autocomplete="off"><div class="sugg"></div></div>
       <div class="row">
-        <div><label>Max distance from route</label>
+        <div><label data-i18n="Max distance from route">Max distance from route</label>
           <select id="corridor"><option value="1">1 km</option><option value="2">2 km</option><option value="3" selected>3 km</option><option value="5">5 km</option><option value="10">10 km</option><option value="20">20 km</option></select></div>
-        <button class="ghost" id="swap" title="Swap start and end">⇅</button>
-        <button class="ghost" id="addVia" title="Add a stop">+ via</button>
+        <button class="ghost" id="swap" title="Swap start and end" data-i18n-title="Swap start and end">⇅</button>
+        <button class="ghost" id="addVia" title="Add a stop" data-i18n-title="Add a stop" data-i18n="+ via">+ via</button>
       </div>
       </div>
       <div id="nearPanel" style="display:none">
-        <div class="field"><label>Around</label>
-          <div class="inrow"><input id="center" placeholder="Address or town, or tap 📍" autocomplete="off"><button class="ghost" id="locate2" title="Use my current location">📍</button></div>
+        <div class="field"><label data-i18n="Around">Around</label>
+          <div class="inrow"><input id="center" placeholder="Address or town, or tap 📍" data-i18n-ph="Address or town, or tap 📍" autocomplete="off"><button class="ghost" id="locate2" title="Use my current location" data-i18n-title="Use my current location">📍</button></div>
           <div class="sugg"></div></div>
         <div class="row">
-          <div style="flex:0 0 96px"><label>Radius</label>
+          <div style="flex:0 0 96px"><label data-i18n="Radius">Radius</label>
             <select id="radius"><option value="2">2 km</option><option value="5">5 km</option><option value="10" selected>10 km</option><option value="20">20 km</option><option value="30">30 km</option><option value="50">50 km</option></select></div>
-          <div><label>Measured</label>
-            <div class="seg" id="rmode"><button data-r="drive" class="on">By road</button><button data-r="crow">Vol d'oiseau</button></div></div>
+          <div><label data-i18n="Measured">Measured</label>
+            <div class="seg" id="rmode"><button data-r="drive" class="on" data-i18n="By road">By road</button><button data-r="crow" data-i18n="Vol d'oiseau">Vol d'oiseau</button></div></div>
         </div>
       </div>
-      <div style="margin-top:10px"><button class="go" id="go">Find stations</button></div>
+      <div style="margin-top:10px"><button class="go" id="go" data-i18n="Find stations">Find stations</button></div>
     </div>
     <div class="card" id="summary" style="display:none"></div>
     <div class="card ideal" id="idealCard" style="display:none">
-      <div class="hd"><h3>✨ Ideal stops</h3>
-        <span class="meta">fill <input type="number" id="litres" min="5" max="150" value="40"> L · car uses <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km ·
-          péage if you exit ≈ <input type="number" id="peage" min="0" max="20" step="0.5" value="1.5"> €</span></div>
+      <div class="hd"><h3 data-i18n="✨ Ideal stops">✨ Ideal stops</h3>
+        <span class="meta"><span data-i18n="fill">fill</span> <input type="number" id="litres" min="5" max="150" value="40"> L · <span data-i18n="car uses">car uses</span> <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km ·
+          <span data-i18n="péage if you exit ≈">péage if you exit ≈</span> <input type="number" id="peage" min="0" max="20" step="0.5" value="1.5"> €</span></div>
       <div id="ideal"></div>
     </div>
     <div class="card list" id="listCard" style="display:none">
-      <div class="sortbar"><span class="meta">Sort:</span>
-        <button data-s="along" class="on">Along route</button><button data-s="price">Cheapest</button><button data-s="detour">Smallest detour</button>
-        <label><input type="checkbox" id="showNA" checked> show unavailable</label></div>
+      <div class="sortbar"><span class="meta" data-i18n="Sort:">Sort:</span>
+        <button data-s="along" class="on">Along route</button><button data-s="price" data-i18n="Cheapest">Cheapest</button><button data-s="detour" data-i18n="Smallest detour">Smallest detour</button>
+        <label><input type="checkbox" id="showNA" checked> <span data-i18n="show unavailable">show unavailable</span></label></div>
       <div id="list"></div>
     </div>
   </div>
   <div id="mapSlot"><div id="mapBox"><div id="map"></div>
-    <button class="pipbtn" id="pipClose" title="Hide the mini-map">✕</button><button class="pipbtn" id="pipBig" title="Back to the full map">⤢ full map</button></div></div>
-  <button class="pipbtn" id="pipShow">🗺 Map</button>
+    <button class="pipbtn" id="pipClose" title="Hide the mini-map" data-i18n-title="Hide the mini-map">✕</button><button class="pipbtn" id="pipBig" title="Back to the full map" data-i18n-title="Back to the full map" data-i18n="⤢ full map">⤢ full map</button></div></div>
+  <button class="pipbtn" id="pipShow" data-i18n="🗺 Map">🗺 Map</button>
 </div>
 <script>
 const $ = s => document.querySelector(s);
@@ -191,7 +197,7 @@ function setMode(m) {
   document.querySelectorAll('#modeTabs button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
   $('#tripPanel').style.display = mode === 'trip' ? '' : 'none';
   $('#nearPanel').style.display = mode === 'near' ? '' : 'none';
-  document.querySelector('.sortbar [data-s="along"]').textContent = mode === 'trip' ? 'Along route' : 'Nearest';
+  document.querySelector('.sortbar [data-s="along"]').textContent = t(mode === 'trip' ? 'Along route' : 'Nearest');
   document.querySelector('.sortbar [data-s="detour"]').style.display = mode === 'trip' ? '' : 'none';
   if (mode === 'near' && sortBy === 'detour') sortBy = 'along';
   document.querySelectorAll('.sortbar button').forEach(x => x.classList.toggle('on', x.dataset.s === sortBy));
@@ -201,6 +207,81 @@ function setRmode(r) {
   document.querySelectorAll('#rmode button').forEach(b => b.classList.toggle('on', b.dataset.r === rmode));
 }
 const store = {get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }};
+
+// ---------- English / French
+let lang = store.get('lang') || ((navigator.language || '').toLowerCase().startsWith('fr') ? 'fr' : 'en');
+const FR = {
+  'Official French fuel price & stock data': 'Prix et stocks officiels des carburants en France',
+  'Official government prices & stock outages · refreshed {0}': 'Prix et ruptures officiels · mis à jour à {0}',
+  'Diesel': 'Gazole', '🚗 Trip': '🚗 Trajet', '📍 Around a place': '📍 Autour d\'un lieu',
+  'From': 'Départ', 'e.g. Paris': 'ex. Paris', 'Use my current location': 'Utiliser ma position',
+  'Via (optional)': 'Étape (facultatif)', 'Stop along the way': 'Arrêt en chemin', 'To': 'Arrivée', 'e.g. Lyon': 'ex. Lyon',
+  'Max distance from route': 'Distance max. de l\'itinéraire', 'Swap start and end': 'Inverser départ et arrivée',
+  'Add a stop': 'Ajouter une étape', '+ via': '+ étape', 'Around': 'Autour de', 'Address or town, or tap 📍': 'Adresse ou ville, ou touchez 📍',
+  'Radius': 'Rayon', 'Measured': 'Mesuré', 'By road': 'Par la route', "Vol d'oiseau": "À vol d'oiseau",
+  'Find stations': 'Trouver des stations', '✨ Ideal stops': '✨ Arrêts idéaux', 'fill': 'plein', 'car uses': 'conso',
+  'péage if you exit ≈': 'péage si vous sortez ≈', 'Sort:': 'Trier :', 'Along route': 'Le long du trajet', 'Nearest': 'Plus proche',
+  'Cheapest': 'Moins cher', 'Smallest detour': 'Plus petit détour', 'Closest': 'Plus proche', 'show unavailable': 'afficher les indisponibles',
+  'Hide the mini-map': 'Masquer la mini-carte', 'Back to the full map': 'Revenir à la grande carte', '⤢ full map': '⤢ grande carte', '🗺 Map': '🗺 Carte',
+  'Couldn\'t find "{0}"': 'Introuvable : « {0} »',
+  'Your browser only shares your location with secure (https://) sites. Open the https:// address of this site to use 📍.': 'Votre navigateur ne partage votre position qu\'avec les sites sécurisés (https://). Ouvrez l\'adresse https:// de ce site pour utiliser 📍.',
+  'My location': 'Ma position',
+  'Location permission was refused. Allow location for this site in your browser settings.': 'Localisation refusée. Autorisez la localisation pour ce site dans les réglages du navigateur.',
+  'Could not get your location, try again outdoors or type your start.': 'Position introuvable : réessayez à l\'extérieur ou saisissez votre départ.',
+  'Searching…': 'Recherche…', 'Planning route and looking up stations…': 'Calcul de l\'itinéraire et recherche des stations…',
+  'Working out the area reachable by road…': 'Calcul de la zone accessible par la route…', 'Looking up stations…': 'Recherche des stations…',
+  'Type an address or tap 📍 to use your location.': 'Saisissez une adresse ou touchez 📍 pour utiliser votre position.',
+  'Please enter a start and a destination.': 'Indiquez un départ et une arrivée.', 'Something went wrong': 'Une erreur est survenue',
+  'Point outside France': 'Point hors de France', 'Need a start and an end': 'Il faut un départ et une arrivée',
+  "A data service didn't answer, please retry.": 'Un service de données n\'a pas répondu, réessayez.',
+  'Trip expired, search again': 'Trajet expiré, relancez la recherche', 'Search expired, search again': 'Recherche expirée, relancez-la', 'Bad request': 'Requête invalide',
+  '{0} day': '{0} jour', '{0} days': '{0} jours',
+  'by road…': 'par la route…', '{0} min · {1} km by road': '{0} min · {1} km par la route',
+  'detour…': 'détour…', 'detour ?': 'détour ?', 'no detour': 'pas de détour', '+{0} min detour': '+{0} min de détour',
+  '{0} km away': 'à {0} km', '{0} km from start': '{0} km du départ',
+  '<b>{0}</b> {1} station available within {2} km': '<b>{0}</b> station {1} disponible à moins de {2} km',
+  '<b>{0}</b> {1} stations available within {2} km': '<b>{0}</b> stations {1} disponibles à moins de {2} km',
+  '{0} without traffic': '{0} sans trafic', '{0} out of stock': '{0} en rupture', '{0} on the other carriageway': '{0} sur la voie opposée',
+  'computing…': 'calcul…', 'none available': 'aucune disponible', 'none': 'aucun',
+  '🚦 With live traffic: <b>{0}</b> · arrive {1}': '🚦 Avec le trafic en temps réel : <b>{0}</b> · arrivée {1}',
+  '+{0} min of delays': '+{0} min de ralentissements', '(red on the map)': '(en rouge sur la carte)', 'no significant delays': 'pas de ralentissement notable',
+  'Calculating real detours: {0}/{1}': 'Calcul des détours réels : {0}/{1}', 'by road': 'par la route', "à vol d'oiseau": "à vol d'oiseau",
+  'around {0}': 'autour de {0}', 'Calculating road distances: {0}/{1}': 'Calcul des distances par la route : {0}/{1}',
+  'OUT OF STOCK · {0}': 'RUPTURE · {0}', 'outage reported {0} ago, price updated since': 'rupture signalée il y a {0}, prix mis à jour depuis',
+  'other side of motorway': 'autre côté de l\'autoroute', '⚠ leaves toll motorway · ~{0} € péage': '⚠ fait sortir de l\'autoroute · ~{0} € de péage',
+  'price {0} old': 'prix d\'il y a {0}', 'no price': 'pas de prix', 'not reachable in your direction': 'inaccessible dans votre sens',
+  'Trip with this stop: <b>{0}</b> instead of {1}': 'Trajet avec cet arrêt : <b>{0}</b> au lieu de {1}',
+  'cheapest': 'moins cher', 'closest': 'plus proche', 'smallest detour': 'plus petit détour', 'motorway': 'autoroute', '24/7 card': 'CB 24/24',
+  'No stations to show.': 'Aucune station à afficher.', 'extra driving time to stop here': 'temps de route en plus pour s\'arrêter ici',
+  'Checking stations up to 15 km off your route for better deals…': 'Recherche de meilleurs prix jusqu\'à 15 km de votre itinéraire…',
+  'Could not compute ideal stops, try again.': 'Impossible de calculer les arrêts idéaux, réessayez.',
+  'No station with a recent price found near this route.': 'Aucune station avec un prix récent près de cet itinéraire.',
+  '⚡ Quickest stop': '⚡ Arrêt le plus rapide', '💰 Cheapest worth it': '💰 Le moins cher rentable', 'Option {0}': 'Option {0}',
+  ' · {0} km off route': ' · à {0} km de l\'itinéraire', 'trip {0}': 'trajet {0}', 'saves {0} €': 'économise {0} €', 'for {0} min more': 'pour {0} min de plus',
+  '⚠ leaves the toll motorway · ~{0} € extra péage': '⚠ fait sortir de l\'autoroute · ~{0} € de péage en plus', ' (included in saving)': ' (inclus dans l\'économie)',
+  'Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km': 'Économies par rapport à l\'arrêt le plus rapide pour un plein de {0} L, moins le carburant consommé sur les km en plus',
+  ' and the extra péage when a stop makes you leave a toll motorway': ' et le péage en plus quand un arrêt fait sortir de l\'autoroute',
+  ' (toll check in progress…)': ' (vérification des péages en cours…)', '. Tap an option to see its path.': '. Touchez une option pour voir son trajet.',
+  'Traffic jam': 'Bouchon', 'Road works': 'Travaux', 'Road closed': 'Route fermée', 'Slow traffic': 'Ralentissement',
+  'with traffic…': 'avec trafic…', 'with traffic: <b>+{0} min</b> · trip {1}': 'avec trafic : <b>+{0} min</b> · trajet {1}',
+  'quickest stop': 'arrêt le plus rapide', 'saves {0} € vs quickest stop': 'économise {0} € vs l\'arrêt le plus rapide',
+  'costs {0} € more than quickest stop': 'coûte {0} € de plus que l\'arrêt le plus rapide',
+};
+function t(en, ...args) {
+  const tpl = lang === 'fr' && FR[en] !== undefined ? FR[en] : en;
+  return tpl.replace(/\{(\d)\}/g, (_, i) => args[i]);
+}
+const fuelName = f => t(FUEL_NAMES[f]);
+const clock = d => d.toLocaleTimeString(lang === 'fr' ? 'fr-FR' : 'en-GB', {hour: '2-digit', minute: '2-digit'});
+let feedTs = null;
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll('[data-i18n]').forEach(e => e.textContent = t(e.dataset.i18n));
+  document.querySelectorAll('[data-i18n-ph]').forEach(e => e.placeholder = t(e.dataset.i18nPh));
+  document.querySelectorAll('[data-i18n-title]').forEach(e => e.title = t(e.dataset.i18nTitle));
+  $('#langBtn').textContent = lang === 'fr' ? '🇬🇧 EN' : '🇫🇷 FR';
+  if (feedTs) $('#feed').textContent = t('Official government prices & stock outages · refreshed {0}', clock(new Date(feedTs * 1000)));
+}
 
 // ---------- fuel chips
 function setFuel(f) {
@@ -252,7 +333,7 @@ async function resolve(key) {
   const q = $('#' + key).value.trim();
   if (!q) return null;
   const r = await (await fetch('/api/geocode?q=' + encodeURIComponent(q))).json();
-  if (!r.length) throw new Error(`Couldn't find "${q}"`);
+  if (!r.length) throw new Error(t('Couldn\'t find "{0}"', q));
   chosen[key] = r[0]; $('#' + key).value = r[0].label;
   return r[0];
 }
@@ -260,19 +341,19 @@ async function resolve(key) {
 // ---------- current location
 function locate(btn, key) {
   if (!window.isSecureContext || !navigator.geolocation) {
-    showMsg('Your browser only shares your location with secure (https://) sites. Open the https:// address of this site to use 📍.', true);
+    showMsg(t('Your browser only shares your location with secure (https://) sites. Open the https:// address of this site to use 📍.'), true);
     return;
   }
   btn.textContent = '…';
   navigator.geolocation.getCurrentPosition(async pos => {
     const lon = pos.coords.longitude, lat = pos.coords.latitude;
-    let label = 'My location';
-    try { const r = await (await fetch(`/api/reverse?lon=${lon}&lat=${lat}`)).json(); if (r) label = 'My location · ' + r.label; } catch {}
-    chosen[key] = {lon, lat, label}; $('#' + key).value = label; btn.textContent = '📍';
+    let label = t('My location');
+    try { const r = await (await fetch(`/api/reverse?lon=${lon}&lat=${lat}`)).json(); if (r) label = t('My location') + ' · ' + r.label; } catch {}
+    chosen[key] = {lon, lat, label, me: true}; $('#' + key).value = label; btn.textContent = '📍';
     if (key === 'center' || $('#to').value) search(); else $('#to').focus();
   }, err => {
     btn.textContent = '📍';
-    showMsg(err.code === 1 ? 'Location permission was refused. Allow location for this site in your browser settings.' : 'Could not get your location, try again outdoors or type your start.', true);
+    showMsg(t(err.code === 1 ? 'Location permission was refused. Allow location for this site in your browser settings.' : 'Could not get your location, try again outdoors or type your start.'), true);
   }, {enableHighAccuracy: true, timeout: 15000, maximumAge: 60000});
 }
 $('#locate').onclick = () => locate($('#locate'), 'from');
@@ -296,30 +377,30 @@ function showMsg(html, isErr) {
 // ---------- search
 async function search() {
   const btn = $('#go'), my = ++gen;
-  btn.disabled = true; btn.textContent = 'Searching…';
-  showMsg(`<span class="meta">${mode === 'trip' ? 'Planning route and looking up stations…' : rmode === 'drive' ? 'Working out the area reachable by road…' : 'Looking up stations…'}</span>`);
+  btn.disabled = true; btn.textContent = t('Searching…');
+  showMsg(`<span class="meta">${t(mode === 'trip' ? 'Planning route and looking up stations…' : rmode === 'drive' ? 'Working out the area reachable by road…' : 'Looking up stations…')}</span>`);
   try {
     if (mode === 'near') {
       const c = await resolve('center');
-      if (!c) throw new Error('Type an address or tap 📍 to use your location.');
+      if (!c) throw new Error(t('Type an address or tap 📍 to use your location.'));
       const res = await fetch(`/api/nearby?lon=${c.lon.toFixed(5)}&lat=${c.lat.toFixed(5)}&radius=${$('#radius').value}&mode=${rmode}&fuel=${fuel}`);
       const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      if (data.error) throw new Error(t(data.error));
       if (my !== gen) return;
       clearIdeal();
       lastPts = [c]; lastData = data; trip = data.trip;
       stations = data.stations; stations.forEach(s => { if (s.drive !== undefined) s.detour = s.drive; });
-      store.set('lastNear', {center: c.label?.startsWith('My location') ? null : c, radius: $('#radius').value});
+      store.set('lastNear', {center: c.me ? null : c, radius: $('#radius').value});
       drawRoute(); drawMarkers(); renderAll(); updatePip();
       fetchDetours(my);
       return;
     }
     const from = await resolve('from'), to = await resolve('to'), via = await resolve('via');
-    if (!from || !to) throw new Error('Please enter a start and a destination.');
+    if (!from || !to) throw new Error(t('Please enter a start and a destination.'));
     const pts = [from, via, to].filter(Boolean);
     const res = await fetch(`/api/route?${pts.map(p => `p=${p.lon.toFixed(5)},${p.lat.toFixed(5)}`).join('&')}&corridor=${$('#corridor').value}&fuel=${fuel}`);
     const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    if (data.error) throw new Error(t(data.error));
     if (my !== gen) return;
     lastPts = pts; lastData = data; trip = data.trip;
     stations = data.stations;
@@ -331,8 +412,8 @@ async function search() {
     fetchTolls(my);
     fetchTraffic(my);
   } catch (e) {
-    if (my === gen) showMsg(e.message || 'Something went wrong', true);
-  } finally { if (my === gen) { btn.disabled = false; btn.textContent = 'Find stations'; } }
+    if (my === gen) showMsg(e.message || t('Something went wrong'), true);
+  } finally { if (my === gen) { btn.disabled = false; btn.textContent = t('Find stations'); } }
 }
 
 // ---------- station status helpers
@@ -341,7 +422,7 @@ function ago(iso) {
   const d = ageDays(iso);
   if (d < 1 / 24) return Math.max(1, Math.round(d * 1440)) + ' min';
   if (d < 1) return Math.round(d * 24) + ' h';
-  return Math.round(d) + ' day' + (Math.round(d) > 1 ? 's' : '');
+  return t(Math.round(d) > 1 ? '{0} days' : '{0} day', Math.round(d));
 }
 const isOut = s => !!s.out_since && !s.maybe_restocked;
 const isAvail = s => !isOut(s) && !s.opposite && s.price != null;
@@ -356,13 +437,13 @@ function picks() {
 }
 function detourText(d) {
   if (mode === 'near') {
-    if (!d) return d === undefined ? 'by road…' : '';
-    return `${Math.max(1, Math.round(d.s / 60))} min · ${d.km} km by road`;
+    if (!d) return d === undefined ? t('by road…') : '';
+    return t('{0} min · {1} km by road', Math.max(1, Math.round(d.s / 60)), d.km);
   }
-  if (d === undefined) return 'detour…';
-  if (d === null) return 'detour ?';
+  if (d === undefined) return t('detour…');
+  if (d === null) return t('detour ?');
   const m = Math.round(d.s / 60);
-  return m < 1 ? 'no detour' : `+${m} min detour`;
+  return m < 1 ? t('no detour') : t('+{0} min detour', m);
 }
 
 // ---------- drawing
@@ -396,37 +477,38 @@ function drawMarkers() {
 function renderAll() { renderSummary(); renderList(); renderIdeal(); }
 
 function where(s) {
-  if (mode === 'near') return `${s.crow_km.toFixed(1)} km away`;
-  return `${Math.round(s.along_km)} km from start${s.at_s != null ? ` · ${hm(s.at_s)}` : ''}`;
+  if (mode === 'near') return t('{0} km away', s.crow_km.toFixed(1));
+  return t('{0} km from start', Math.round(s.along_km)) + (s.at_s != null ? ` · ${hm(s.at_s)}` : '');
 }
 function renderSummary() {
   if (mode === 'near') return renderNearSummary();
   const d = lastData, km = Math.round(d.distance_m / 1000), h = Math.floor(d.duration_s / 3600), mn = Math.round(d.duration_s % 3600 / 60);
   const {cheapest, nearest, pending, avail} = picks();
   const out = stations.filter(isOut).length, opp = stations.filter(s => s.opposite && !isOut(s)).length;
-  const pick = (k, s, v) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${k}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''} · ${where(s)}</div></div>`
-                              : `<div class="pick"><div class="k">${k}</div><div class="v">–</div><div class="w">${k === 'Smallest detour' && pending ? 'computing…' : 'none available'}</div></div>`;
+  const pick = (k, s, v, wait) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${t(k)}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''} · ${where(s)}</div></div>`
+                              : `<div class="pick"><div class="k">${t(k)}</div><div class="v">–</div><div class="w">${wait ? t('computing…') : t('none available')}</div></div>`;
+  const nm = nearest ? Math.round(nearest.detour.s / 60) : 0;
   $('#summary').style.display = 'block';
-  $('#summary').innerHTML = `<b>${avail}</b> ${FUEL_NAMES[fuel]} station${avail === 1 ? '' : 's'} available within ${$('#corridor').value} km
-    <div class="meta">${km} km${traffic ? '' : ` · ${h} h ${String(mn).padStart(2, '0')} without traffic`}${out ? ` · <span style="color:var(--bad)">${out} out of stock</span>` : ''}${opp ? ` · ${opp} on the other carriageway` : ''}</div>
+  $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station available within {2} km' : '<b>{0}</b> {1} stations available within {2} km', avail, fuelName(fuel), $('#corridor').value)}
+    <div class="meta">${km} km${traffic ? '' : ' · ' + t('{0} without traffic', `${h} h ${String(mn).padStart(2, '0')}`)}${out ? ` · <span style="color:var(--bad)">${t('{0} out of stock', out)}</span>` : ''}${opp ? ' · ' + t('{0} on the other carriageway', opp) : ''}</div>
     <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
-      ${pick('Smallest detour', nearest, nearest ? detourText(nearest.detour).replace(' detour', '') + (pending ? ' <span class="meta">…</span>' : '') : '')}</div>
-    ${traffic ? `<div class="traffic">🚦 With live traffic: <b>${hm(traffic.duration_s)}</b> · arrive ${new Date(Date.now() + traffic.duration_s * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}${traffic.delay_s >= 60 ? ` · <b class="bad">+${Math.round(traffic.delay_s / 60)} min of delays</b> (red on the map)` : ' · no significant delays'}</div>` : ''}
-    ${pending ? `<div class="note">Calculating real detours: ${avail - pending}/${avail}</div>` : ''}`;
+      ${pick('Smallest detour', nearest, nearest ? `+${nm} min` + (pending ? ' <span class="meta">…</span>' : '') : '', pending)}</div>
+    ${traffic ? `<div class="traffic">${t('🚦 With live traffic: <b>{0}</b> · arrive {1}', hm(traffic.duration_s), clock(new Date(Date.now() + traffic.duration_s * 1000)))}${traffic.delay_s >= 60 ? ` · <b class="bad">${t('+{0} min of delays', Math.round(traffic.delay_s / 60))}</b> ${t('(red on the map)')}` : ' · ' + t('no significant delays')}</div>` : ''}
+    ${pending ? `<div class="note">${t('Calculating real detours: {0}/{1}', avail - pending, avail)}</div>` : ''}`;
   $('#summary').querySelectorAll('.pick[data-id]').forEach(p => p.onclick = () => select(p.dataset.id, true));
   $('#listCard').style.display = stations.length ? 'flex' : 'none';
 }
 function renderNearSummary() {
   const {cheapest, nearest, pending, avail} = picks();
   const out = stations.filter(isOut).length;
-  const pick = (k, s, v) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${k}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''}</div></div>`
-                              : `<div class="pick"><div class="k">${k}</div><div class="v">–</div><div class="w">${k === 'Closest' && pending ? 'computing…' : 'none available'}</div></div>`;
+  const pick = (k, s, v, wait) => s ? `<div class="pick" data-id="${s.id}"><div class="k">${t(k)}</div><div class="v">${v}</div><div class="w">${esc(s.brand || s.name || s.city)}${s.brand || s.name ? ' · ' + esc(s.city) : ''}</div></div>`
+                              : `<div class="pick"><div class="k">${t(k)}</div><div class="v">–</div><div class="w">${wait ? t('computing…') : t('none available')}</div></div>`;
   $('#summary').style.display = 'block';
-  $('#summary').innerHTML = `<b>${avail}</b> ${FUEL_NAMES[fuel]} station${avail === 1 ? '' : 's'} available within ${lastData.radius} km ${lastData.mode === 'drive' ? 'by road' : "à vol d'oiseau"}
-    <div class="meta">around ${esc(lastPts[0].label)}${out ? ` · <span style="color:var(--bad)">${out} out of stock</span>` : ''}</div>
+  $('#summary').innerHTML = `${t(avail === 1 ? '<b>{0}</b> {1} station available within {2} km' : '<b>{0}</b> {1} stations available within {2} km', avail, fuelName(fuel), lastData.radius)} ${t(lastData.mode === 'drive' ? 'by road' : "à vol d'oiseau")}
+    <div class="meta">${t('around {0}', esc(lastPts[0].label))}${out ? ` · <span style="color:var(--bad)">${t('{0} out of stock', out)}</span>` : ''}</div>
     <div class="picks">${pick('Cheapest', cheapest, cheapest ? cheapest.price.toFixed(3) + ' €' : '')}
-      ${pick('Closest', nearest, nearest ? `${Math.max(1, Math.round(nearest.detour.s / 60))} min <span class="meta">${nearest.detour.km} km</span>` : '')}</div>
-    ${pending ? `<div class="note">Calculating road distances: ${avail - pending}/${avail}</div>` : ''}`;
+      ${pick('Closest', nearest, nearest ? `${Math.max(1, Math.round(nearest.detour.s / 60))} min <span class="meta">${nearest.detour.km} km</span>` : '', pending)}</div>
+    ${pending ? `<div class="note">${t('Calculating road distances: {0}/{1}', avail - pending, avail)}</div>` : ''}`;
   $('#summary').querySelectorAll('.pick[data-id]').forEach(p => p.onclick = () => select(p.dataset.id, true));
   $('#listCard').style.display = stations.length ? 'flex' : 'none';
 }
@@ -445,19 +527,19 @@ function navLinks(s) {
          `<a href="https://www.google.com/maps/search/?api=1&query=${g}" target="_blank" rel="noopener">Maps</a>`;
 }
 function statusTags(s) {
-  const t = [];
-  if (isOut(s)) t.push(`<span class="tag bad">OUT OF STOCK · ${ago(s.out_since)}</span>`);
-  else if (s.maybe_restocked) t.push(`<span class="tag old">outage reported ${ago(s.out_since)} ago, price updated since</span>`);
-  if (s.opposite) t.push('<span class="tag bad">other side of motorway</span>');
-  if (mode === 'trip' && exitsToll(s)) t.push(`<span class="tag toll">⚠ leaves toll motorway · ~${peage().toFixed(2)} € péage</span>`);
-  if (!isOut(s) && s.price != null) t.push(`<span class="tag ${isFresh(s) ? 'ok' : 'old'}">${isFresh(s) ? '✓ ' : '⚠ '}price ${ago(s.updated)} old</span>`);
+  const tr = window.t, t = [];
+  if (isOut(s)) t.push(`<span class="tag bad">${tr('OUT OF STOCK · {0}', ago(s.out_since))}</span>`);
+  else if (s.maybe_restocked) t.push(`<span class="tag old">${tr('outage reported {0} ago, price updated since', ago(s.out_since))}</span>`);
+  if (s.opposite) t.push(`<span class="tag bad">${tr('other side of motorway')}</span>`);
+  if (mode === 'trip' && exitsToll(s)) t.push(`<span class="tag toll">${tr('⚠ leaves toll motorway · ~{0} € péage', peage().toFixed(2))}</span>`);
+  if (!isOut(s) && s.price != null) t.push(`<span class="tag ${isFresh(s) ? 'ok' : 'old'}">${isFresh(s) ? '✓ ' : '⚠ '}${tr('price {0} old', ago(s.updated))}</span>`);
   return t.join('');
 }
 function popupHtml(s) {
-  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : 'no price'}</b> ${FUEL_NAMES[fuel]}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
+  return `${title(s) ? `<b>${esc(title(s))}</b><br>` : ''}<b>${s.price != null ? s.price.toFixed(3) + ' €/L' : t('no price')}</b> ${fuelName(fuel)}<br>${esc(s.address)}<br>${esc(s.cp)} ${esc(s.city)}
     <div class="tags">${statusTags(s)}</div>
-    <small>${mode === 'near' ? `${where(s)} · ${detourText(s.detour)}` : `${where(s)} · ${s.opposite ? 'not reachable in your direction' : detourText(s.detour)}${s.detour ? ` (${s.detour.km} km)` : ''}`}</small>
-    ${mode === 'trip' && s.detour && !s.opposite ? `<div class="meta">Trip with this stop: <b>${hm(lastData.duration_s + s.detour.s)}</b> instead of ${hm(lastData.duration_s)}</div><div class="tags">${worthVsQuickest(s)}</div>` : ''}
+    <small>${mode === 'near' ? `${where(s)} · ${detourText(s.detour)}` : `${where(s)} · ${s.opposite ? t('not reachable in your direction') : detourText(s.detour)}${s.detour ? ` (${s.detour.km} km)` : ''}`}</small>
+    ${mode === 'trip' && s.detour && !s.opposite ? `<div class="meta">${t('Trip with this stop: <b>{0}</b> instead of {1}', hm(lastData.duration_s + s.detour.s), hm(lastData.duration_s))}</div><div class="tags">${worthVsQuickest(s)}</div>` : ''}
     <div class="nav" style="margin-top:4px">${navLinks(s)}</div>`;
 }
 
@@ -476,14 +558,14 @@ function renderList() {
                    : `<div><b>${esc(s.city)}</b> <span class="meta">${esc(s.cp)}</span></div><div class="meta">${esc(s.address)}</div>`}</div>
       <div><div class="price ${s === cheapest ? 'best' : ''}">${s.price != null ? s.price.toFixed(3) + '<span class="meta"> €</span>' : '–'}</div>${shortDetour(s)}</div>
       <div class="tags">
-        ${s === cheapest ? '<span class="tag cheap">cheapest</span>' : ''}${s === nearest ? `<span class="tag near">${mode === 'near' ? 'closest' : 'smallest detour'}</span>` : ''}
+        ${s === cheapest ? `<span class="tag cheap">${t('cheapest')}</span>` : ''}${s === nearest ? `<span class="tag near">${t(mode === 'near' ? 'closest' : 'smallest detour')}</span>` : ''}
         ${statusTags(s)}
         <span class="tag">${where(s)}</span>
         ${s.opposite || !detourText(s.detour) || mode === 'trip' ? '' : `<span class="tag">${detourText(s.detour)}</span>`}
         ${mode === 'trip' && exitsToll(s) && s.detour ? worthVsQuickest(s) : ''}
-        ${s.motorway ? '<span class="tag">motorway</span>' : ''}${s.h24 ? '<span class="tag">24/7 card</span>' : ''}
+        ${s.motorway ? `<span class="tag">${t('motorway')}</span>` : ''}${s.h24 ? `<span class="tag">${t('24/7 card')}</span>` : ''}
         <span class="nav" style="margin-left:auto">${navLinks(s)}</span>
-      </div></div>`).join('') || '<div class="note" style="padding:12px">No stations to show.</div>';
+      </div></div>`).join('') || `<div class="note" style="padding:12px">${t('No stations to show.')}</div>`;
 }
 $('#list').addEventListener('click', e => { if (e.target.closest('a')) return; const d = e.target.closest('[data-id]'); if (d) select(d.dataset.id, true); });
 document.querySelectorAll('.sortbar button').forEach(b => b.onclick = () => {
@@ -503,7 +585,7 @@ function shortDetour(s) {
   if (s.opposite) return '<div class="dt meta">–</div>';
   if (s.detour === undefined) return '<div class="dt meta">…</div>';
   if (!s.detour) return '';
-  return `<div class="dt ${s.detour.s < 60 ? 'zero' : ''}" title="extra driving time to stop here">${mins(s.detour)}</div>`;
+  return `<div class="dt ${s.detour.s < 60 ? 'zero' : ''}" title="${t('extra driving time to stop here')}">${mins(s.detour)}</div>`;
 }
 
 // ---------- ideal stops: best time-vs-price trade-offs, including stations off the normal route
@@ -546,24 +628,24 @@ function renderIdeal() {
   const card = $('#idealCard');
   if (mode !== 'trip' || ideal === null) { card.style.display = 'none'; return; }
   card.style.display = 'block';
-  if (ideal === 'loading') { $('#ideal').innerHTML = '<div class="note">Checking stations up to 15 km off your route for better deals…</div>'; return; }
-  if (ideal === 'error') { $('#ideal').innerHTML = '<div class="note err">Could not compute ideal stops, try again.</div>'; return; }
+  if (ideal === 'loading') { $('#ideal').innerHTML = `<div class="note">${t('Checking stations up to 15 km off your route for better deals…')}</div>`; return; }
+  if (ideal === 'error') { $('#ideal').innerHTML = `<div class="note err">${t('Could not compute ideal stops, try again.')}</div>`; return; }
   const opts = idealOptions();
-  if (!opts.length) { $('#ideal').innerHTML = '<div class="note">No station with a recent price found near this route.</div>'; return; }
+  if (!opts.length) { $('#ideal').innerHTML = `<div class="note">${t('No station with a recent price found near this route.')}</div>`; return; }
   const base = lastData.duration_s;
   $('#ideal').innerHTML = opts.map((o, i) => {
-    const s = o.s, label = i === 0 ? '⚡ Quickest stop' : (i === opts.length - 1 && opts.length > 2 ? '💰 Cheapest worth it' : `Option ${i + 1}`);
-    const off = s.off_route_km > +$('#corridor').value ? ` · ${s.off_route_km.toFixed(1)} km off route` : '';
+    const s = o.s, label = i === 0 ? t('⚡ Quickest stop') : (i === opts.length - 1 && opts.length > 2 ? t('💰 Cheapest worth it') : t('Option {0}', i + 1));
+    const off = s.off_route_km > +$('#corridor').value ? t(' · {0} km off route', s.off_route_km.toFixed(1)) : '';
     return `<div class="opt ${idealSel === s.id ? 'sel' : ''}" data-id="${s.id}">
       <div><div class="l">${label}</div><div class="n">${esc(title(s) || s.city)}</div>
         <div class="meta">${esc(s.city)} · ${where(s)}${off}</div></div>
       <div class="r"><div class="big">${s.price.toFixed(3)} €</div>
-        <div class="meta"><b>${mins(s.detour)}</b> · trip ${hm(base + s.detour.s)}</div>
+        <div class="meta"><b>${mins(s.detour)}</b> · ${t('trip {0}', hm(base + s.detour.s))}</div>
         ${trafficLine(s)}
-        ${i ? `<div class="meta"><span class="save">saves ${o.saving.toFixed(2)} €</span> for ${o.extraMin} min more</div>` : ''}</div>
-      ${exitsToll(s) ? `<div style="grid-column:1/-1;margin-top:4px"><span class="tag toll">⚠ leaves the toll motorway · ~${peage().toFixed(2)} € extra péage${i ? ' (included in saving)' : ''}</span></div>` : ''}
+        ${i ? `<div class="meta"><span class="save">${t('saves {0} €', o.saving.toFixed(2))}</span> ${t('for {0} min more', o.extraMin)}</div>` : ''}</div>
+      ${exitsToll(s) ? `<div style="grid-column:1/-1;margin-top:4px"><span class="tag toll">${t('⚠ leaves the toll motorway · ~{0} € extra péage', peage().toFixed(2))}${i ? t(' (included in saving)') : ''}</span></div>` : ''}
     </div>`;
-  }).join('') + `<div class="note">Savings compare with the quickest stop for a ${+$('#litres').value || 40} L fill, minus the fuel burnt on the extra km${tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)'}. Tap an option to see its path.</div>`;
+  }).join('') + `<div class="note">${t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', +$('#litres').value || 40)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}</div>`;
   $('#ideal').querySelectorAll('.opt').forEach(el => el.onclick = () => showVia(opts.find(o => o.s.id === el.dataset.id).s));
   if (traffic) { const need = opts.map(o => o.s.id).filter(id => !(id in trafficVia)); if (need.length) fetchTrafficVia(need); }
 }
@@ -595,7 +677,7 @@ async function fetchTraffic(my) {
     if (my !== gen || !r.enabled) return;
     traffic = r; trafficLayer.clearLayers();
     r.jams.forEach(j => L.polyline(j.coords.map(c => [c[1], c[0]]), {color: j.kind === 'ROAD_CLOSURE' ? '#000' : '#dc2626', weight: 7, opacity: .85})
-      .bindTooltip(`${{JAM: 'Traffic jam', ROAD_WORK: 'Road works', ROAD_CLOSURE: 'Road closed'}[j.kind] || 'Slow traffic'}: +${Math.max(1, Math.round(j.delay_s / 60))} min${j.speed ? ` (${j.speed} km/h)` : ''}`).addTo(trafficLayer));
+      .bindTooltip(`${t({JAM: 'Traffic jam', ROAD_WORK: 'Road works', ROAD_CLOSURE: 'Road closed'}[j.kind] || 'Slow traffic')}${lang === 'fr' ? ' :' : ':'} +${Math.max(1, Math.round(j.delay_s / 60))} min${j.speed ? ` (${j.speed} km/h)` : ''}`).addTo(trafficLayer));
     renderAll();
   } catch {}
 }
@@ -611,17 +693,17 @@ async function fetchTrafficVia(ids) {
 function trafficLine(s) {
   if (!traffic) return '';
   const v = trafficVia[s.id];
-  if (v === undefined) return '<div class="meta">with traffic…</div>';
+  if (v === undefined) return `<div class="meta">${t('with traffic…')}</div>`;
   if (v === null) return '';
-  return `<div class="meta">with traffic: <b>+${Math.round(v / 60)} min</b> · arrive ${hm(traffic.duration_s + v)}</div>`;
+  return `<div class="meta">${t('with traffic: <b>+{0} min</b> · trip {1}', Math.round(v / 60), hm(traffic.duration_s + v))}</div>`;
 }
 function worthVsQuickest(s) {
   const opts = idealOptions(); if (!opts.length || !s.detour || s.opposite || s.price == null) return '';
-  const q = opts[0].s; if (q.id === s.id) return '<span class="tag ok">quickest stop</span>';
+  const q = opts[0].s; if (q.id === s.id) return `<span class="tag ok">${t('quickest stop')}</span>`;
   const L_ = Math.max(1, +$('#litres').value || 40), cons = Math.max(1, +$('#cons').value || 7);
   const tollCost = (exitsToll(s) ? peage() : 0) - (exitsToll(q) ? peage() : 0);
   const v = (q.price - s.price) * L_ - Math.max(0, s.detour.km - q.detour.km) * cons / 100 * s.price - tollCost;
-  return v >= 0 ? `<span class="tag ok">saves ${v.toFixed(2)} € vs quickest stop</span>` : `<span class="tag bad">costs ${(-v).toFixed(2)} € more than quickest stop${exitsToll(s) ? ' (péage)' : ''}</span>`;
+  return v >= 0 ? `<span class="tag ok">${t('saves {0} € vs quickest stop', v.toFixed(2))}</span>` : `<span class="tag bad">${t('costs {0} € more than quickest stop', (-v).toFixed(2))}${exitsToll(s) ? ' (péage)' : ''}</span>`;
 }
 ['#litres', '#cons', '#peage'].forEach(id => $(id).addEventListener('input', () => { store.set('fill', {l: $('#litres').value, c: $('#cons').value, p: $('#peage').value}); renderAll(); }));
 
@@ -663,7 +745,7 @@ function updatePip() {
   }, 60);
 }
 const isPip = () => $('#mapBox').classList.contains('pip');
-function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' €' : 'no price'}`; }
+function tipText(s) { return `${esc(title(s) || s.city)} · ${s.price != null ? s.price.toFixed(3) + ' €' : t('no price')}`; }
 // In the mini-map a full popup would cover everything: show a one-line label and highlight the station in the list instead.
 map.on('popupopen', e => {
   if (!isPip()) return;
@@ -685,9 +767,16 @@ $('#pipBig').onclick = e => { e.stopPropagation(); $('#mapSlot').scrollIntoView(
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c])); }
 
 // ---------- init
+applyLang();
+$('#langBtn').onclick = () => {
+  lang = lang === 'fr' ? 'en' : 'fr'; store.set('lang', lang);
+  applyLang(); setMode(mode);
+  if (lastData) { renderAll(); drawMarkers(); }
+  if (!$('#go').disabled) $('#go').textContent = t('Find stations');
+};
 setFuel(store.get('fuel') || 'E85');
 fetch('/api/status').then(r => r.json()).then(s => {
-  if (s.feed_updated) $('#feed').textContent = `Official government prices & stock outages · refreshed ${new Date(s.feed_updated * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'})}`;
+  if (s.feed_updated) { feedTs = s.feed_updated; applyLang(); }
 }).catch(() => {});
 setRmode(store.get('rmode') || 'drive');
 const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; $('#peage').value = fill.p ?? 1.5; }
