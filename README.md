@@ -10,10 +10,12 @@ with their latest official prices and stock outages.
   driving order, with the **real detour time** (leave the route, refuel, come back), so stations on the wrong side of a dual
   carriageway show their true cost. Motorway service stations on the opposite carriageway are flagged and never suggested.
 - **Ideal stops:** also explores up to 3 genuinely different routes to the destination (TomTom / OSRM alternatives, or forced
-  detours left and right of the main route) and checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
+  detours left and right of the main route), shows each one's total time, and checks stations up to 15 km off the route and lists the best time-vs-price trade-offs (quickest stop,
   then each slower-but-cheaper option with its real saving for your fill, minus the fuel burnt on the extra km), and draws that path.
-- **Toll roads:** flags stations that make you leave a toll motorway ("⚠ leaves toll motorway"), and counts the
-  estimated extra péage (adjustable, default 1.50 €) in the savings, telling you when a cheaper station ends up costing more.
+- **Toll roads:** flags stations that make you leave a toll motorway and **estimates the extra péage automatically**
+  (a new ticket on re-entry, ~1.20 €, minus the toll km the detour skips at ~0.11 €/km; it can be negative when the
+  detour avoids tolls). The estimate is counted in the savings, telling you when a cheaper station ends up costing more.
+- **Added time** is always the whole trip through the station minus the fastest direct route.
 - **Live traffic (optional):** with a free [TomTom developer](https://developer.tomtom.com) key, shows the ETA with live traffic,
   jams in red on the map, and each ideal stop's detour with traffic. Put `{"tomtom_key": "..."}` in `config.json` next to `server.py`.
 - **Around a place:** search a radius around your location or an address, measured **by road** or **à vol d'oiseau**.

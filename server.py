@@ -364,14 +364,14 @@ def full_route(points):
 
 
 def via_route(points):
-    """(duration_s, distance_m) for a route through points."""
+    """(duration_s, distance_m, coords) for a route through points."""
     try:
         r = ign_route(points, steps=False)
-        return r["duration"], r["distance"]
+        return r["duration"], r["distance"], r["geometry"]["coordinates"]
     except Exception as e:
         print(f"[detour] IGN failed ({e}), trying OSRM", flush=True)
         rt = osrm_route(points, annotations=False)
-        return rt["duration"], rt["distance"]
+        return rt["duration"], rt["distance"], rt["geometry"]["coordinates"]
 
 
 # ================================================================ geometry
@@ -525,6 +525,8 @@ class Trip:
         self.traffic = _bg_pool.submit(tomtom_route, points) if TOMTOM_KEY else None
         self.traffic_via = {}        # station id -> seconds with traffic via that station
         self.alts = None             # alternative routes (computed on demand)
+        self.detour_geom = {}        # station id -> geometry of the trip through that station
+        self.main_toll_km = None
         self.lock = threading.Lock()
 
     def exits_toll(self, s, tolls):
@@ -660,7 +662,7 @@ def compute_drive(nb, sid):
         s = _stations.get(sid)
     if s is None:
         return None
-    dur, dist = via_route([(nb.lon, nb.lat), (s["lon"], s["lat"])])
+    dur, dist, _ = via_route([(nb.lon, nb.lat), (s["lon"], s["lat"])])
     nb.drives[sid] = res = {"s": round(dur), "km": round(dist / 1000, 1)}
     return res
 
@@ -691,22 +693,17 @@ def stations_for(trip, fuel, corridor_km):
 
 
 def compute_detour(trip, sid):
+    """Added time/distance = (whole trip start -> station -> destination) - (fastest direct route).
+    The route through the station is free to take any path, so this is exact even far from the main route."""
     if sid in trip.detours:
         return trip.detours[sid]
     with _lock:
         s = _stations.get(sid)
     if s is None:
         return None
-    n = trip.index.nearest(s["lon"], s["lat"], 30)
-    if n is None:
-        return None
-    window = 10 + 2 * n["off_km"]
-    a_lon, a_lat, a_t = trip.index.point_at(n["along_km"] - window)
-    b_lon, b_lat, b_t = trip.index.point_at(n["along_km"] + window)
-    a_km = max(0.0, n["along_km"] - window)
-    b_km = min(trip.index.cum[-1], n["along_km"] + window)
-    dur, dist = via_route([(a_lon, a_lat), (s["lon"], s["lat"]), (b_lon, b_lat)])
-    res = {"s": max(0, round(dur - (b_t - a_t))), "km": round(max(0.0, dist / 1000 - (b_km - a_km)), 1)}
+    dur, dist, coords = via_route(points_via(trip, s))
+    res = {"s": max(0, round(dur - trip.route["duration"])), "km": round(max(0.0, (dist - trip.route["distance"]) / 1000), 1)}
+    trip.detour_geom[sid] = simplify(coords, 1500)
     trip.detours[sid] = res
     return res
 
@@ -805,23 +802,21 @@ def alternative_routes(trip, max_alts=3):
         if len(kept) < 2:
             for c in _route_coords_forced(trip):
                 consider(c)
+        for k in kept:
+            c = k["coords"]
+            mids = [tuple(c[int(len(c) * f)][:2]) for f in (0.25, 0.5, 0.75)]
+            try:
+                d, dist, _ = via_route([trip.points[0]] + mids + [trip.points[-1]])
+                k["duration"], k["distance"] = d, dist
+            except Exception as e:
+                print(f"[alt] timing failed: {e!r}", flush=True)
+                k["duration"] = k["distance"] = None
         trip.alts = kept
         print(f"[alt] {len(cands)} candidate alternatives, kept {len(kept)}", flush=True)
         return kept
 
 
-def compute_full_detour(trip, sid):
-    """Extra time/distance of the whole trip when going through the station (any path, not just near the main route)."""
-    if sid in trip.detours:
-        return trip.detours[sid]
-    with _lock:
-        s = _stations.get(sid)
-    if s is None:
-        return None
-    dur, dist = via_route(points_via(trip, s))
-    res = {"s": max(0, round(dur - trip.route["duration"])), "km": round(max(0.0, (dist - trip.route["distance"]) / 1000), 1)}
-    trip.detours[sid] = res
-    return res
+compute_full_detour = compute_detour
 
 
 def ideal_candidates(trip, fuel, band_km, alt_band_km=10):
@@ -868,7 +863,7 @@ def ideal_candidates(trip, fuel, band_km, alt_band_km=10):
             continue
         if d is not None:
             out.append(dict(chosen[sid], detour=d))
-    return out, [simplify(a["coords"], 800) for a in alts]
+    return out, [{"coords": simplify(a["coords"], 800), "duration_s": a.get("duration"), "distance_m": a.get("distance")} for a in alts]
 
 
 def points_via(trip, s):
@@ -886,10 +881,39 @@ def points_via(trip, s):
     return pts
 
 
+TOLL_EUR_PER_KM = 0.11      # average French class-1 (car) toll rate
+TOLL_REENTRY_EUR = 1.20     # a new ticket when you get back on: minimum charge + per-ticket rounding
+
+
+def toll_km(coords, tolls):
+    km = 0.0
+    for a, b in zip(coords, coords[1:]):
+        if tolls.is_toll((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, 0.15):
+            km += math.hypot((b[0] - a[0]) * 111.32 * math.cos(math.radians(a[1])), (b[1] - a[1]) * 110.574)
+    return km
+
+
+def toll_estimate(trip, sid, tolls):
+    """Extra péage when the stop makes you leave the toll motorway: a re-entry ticket, minus the toll km the detour skips."""
+    coords = trip.detour_geom.get(sid)
+    if coords is None:
+        return None
+    if trip.main_toll_km is None:
+        trip.main_toll_km = toll_km(trip.route["coords"], tolls)
+    skipped = max(0.0, trip.main_toll_km - toll_km(coords, tolls))
+    return round(TOLL_REENTRY_EUR - skipped * TOLL_EUR_PER_KM, 2)   # negative = the detour avoids enough toll km to save money
+
+
 def toll_exits(trip, fuel):
-    """Ids of stations (up to 25 km from the route) that make you leave a toll motorway."""
+    """Stations (up to 25 km from the route) that make you leave a toll motorway, with the estimated extra péage."""
     tolls = trip.tolls.result(timeout=90)
-    return [s["id"] for s in stations_for(trip, fuel, 25) if trip.exits_toll(s, tolls)]
+    ids = [s["id"] for s in stations_for(trip, fuel, 25) if trip.exits_toll(s, tolls)]
+    cost = {}
+    for sid in ids:
+        e = toll_estimate(trip, sid, tolls)
+        if e is not None:
+            cost[sid] = e
+    return {"exits": ids, "cost": cost}
 
 
 def traffic_via(trip, sid):
@@ -968,7 +992,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "Trip expired, search again"}, 410)
                 if u.path == "/api/tolls":
                     fuel = q.get("fuel", ["E85"])[0]
-                    return self.send_json({"exits": toll_exits(trip, fuel if fuel in FUEL_CHOICES else "E85")})
+                    return self.send_json(toll_exits(trip, fuel if fuel in FUEL_CHOICES else "E85"))
                 if u.path == "/api/traffic":
                     if trip.traffic is None:
                         return self.send_json({"enabled": False})
@@ -995,7 +1019,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_json({"error": "Unknown fuel"}, 400)
                 band = min(max(float(q.get("band", ["15"])[0]), 1), 25)
                 cands, alts = ideal_candidates(trip, fuel, band)
-                return self.send_json({"band": band, "stations": cands, "alternatives": alts})
+                return self.send_json({"band": band, "stations": cands, "alternatives": alts,
+                                       "fastest_s": trip.route["duration"], "fastest_m": trip.route["distance"]})
             if u.path == "/api/status":
                 return self.send_json({"stations": len(_stations), "feed_updated": _stations_loaded_at, "https": tls.available()})
             return self.serve_static(u.path)

@@ -85,6 +85,9 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .opt .r{text-align:left;max-width:none;display:flex;flex-wrap:wrap;align-items:baseline;gap:0 10px;margin-top:4px}
 .opt .big{font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
 .opt .save{color:var(--accent);font-weight:700}
+.alts{margin:2px 0 6px;font-size:13px;display:flex;flex-direction:column;gap:3px}
+.alts .a{cursor:pointer;padding:3px 6px;border-radius:6px}
+.alts .a:hover,.alts .a.on{background:var(--chip)}
 .opt .loss{color:var(--bad);font-weight:700}
 .tag.toll{background:#f59e0b;color:#1c1917;white-space:normal;display:inline-block}
 .traffic{margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--chip);font-size:13px}
@@ -123,8 +126,8 @@ button{font:inherit;border:0;border-radius:8px;padding:11px 14px;cursor:pointer}
 .st{scroll-margin-top:110px}
 body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
 .pin.selp{outline:3px solid #f59e0b;outline-offset:1px;transform:rotate(-45deg) scale(1.2)}
-.st .more{grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:13px;display:flex;flex-direction:column;gap:4px;cursor:default}
-.st .more .acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
+.more{grid-column:1/-1;margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:13px;display:flex;flex-direction:column;gap:4px;cursor:default}
+.more .acts{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px}
 .seemap{background:var(--accent);color:var(--accent-ink);padding:8px 14px;font-weight:600;font-size:14px}
 
 </style>
@@ -172,8 +175,8 @@ body.haspip .layout{padding-bottom:calc(min(32vh,230px) + 24px)}
     <div class="card" id="summary" style="display:none"></div>
     <div class="card ideal" id="idealCard" style="display:none">
       <div class="hd"><h3 data-i18n="✨ Ideal stops">✨ Ideal stops</h3>
-        <span class="meta"><span data-i18n="fill">fill</span> <input type="number" id="litres" min="5" max="150" value="40"> L · <span data-i18n="car uses">car uses</span> <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km ·
-          <span data-i18n="péage if you exit ≈">péage if you exit ≈</span> <input type="number" id="peage" min="0" max="20" step="0.5" value="1.5"> €</span></div>
+        <span class="meta"><span data-i18n="fill">fill</span> <input type="number" id="litres" min="5" max="150" value="40"> L · <span data-i18n="car uses">car uses</span> <input type="number" id="cons" min="2" max="30" step="0.5" value="7"> L/100 km</span></div>
+      <div id="altsBox"></div>
       <div id="ideal"></div>
     </div>
     <div class="card list" id="listCard" style="display:none">
@@ -196,10 +199,19 @@ let routeLayer = null, markers = L.layerGroup().addTo(map), stations = [], sortB
 let trip = null, gen = 0, fuel = 'E85', lastData = null, lastPts = null;
 const chosen = {from: null, via: null, to: null, center: null};
 let mode = 'trip', rmode = 'drive';
-let ideal = null, idealSel = null, altLayer = L.layerGroup().addTo(map), altRoutesLayer = L.layerGroup().addTo(map), altCount = 0;
+let ideal = null, idealSel = null, altLayer = L.layerGroup().addTo(map), altRoutesLayer = L.layerGroup().addTo(map), altCount = 0, altInfo = null, altLines = [], altOn = null;
 let tollExits = null, traffic = null, trafficLayer = L.layerGroup().addTo(map), trafficVia = {};
 const exitsToll = s => !!(tollExits && tollExits.has(s.id));
-const peage = () => Math.max(0, +$('#peage').value || 0);
+// Extra péage when a stop makes you leave a toll motorway: estimated by the server for each station
+// (new ticket on re-entry minus the toll km skipped; negative = the detour avoids tolls). 1.20 € until it's known.
+let tollEst = {};
+const peageFor = s => exitsToll(s) ? (tollEst[s.id] ?? 1.2) : 0;
+function tollTag(s, inSaving) {
+  const v = peageFor(s);
+  const txt = v < 0 ? t('⚠ leaves toll motorway · avoids tolls: ~{0} € less péage', (-v).toFixed(2))
+                    : t('⚠ leaves toll motorway · ~{0} € extra péage (estimated)', v.toFixed(2));
+  return `<span class="tag toll">${txt}${inSaving ? t(' (included in saving)') : ''}</span>`;
+}
 function setMode(m) {
   mode = m === 'near' ? 'near' : 'trip'; store.set('mode', mode);
   document.querySelectorAll('#modeTabs button').forEach(b => b.classList.toggle('on', b.dataset.m === mode));
@@ -273,6 +285,11 @@ const FR = {
   'Traffic jam': 'Bouchon', 'Road works': 'Travaux', 'Road closed': 'Route fermée', 'Slow traffic': 'Ralentissement',
   'with traffic…': 'avec trafic…', 'with traffic: <b>+{0} min</b> · trip {1}': 'avec trafic : <b>+{0} min</b> · trajet {1}',
   'quickest stop': 'arrêt le plus rapide', 'See on map': 'Voir sur la carte',
+  '⚠ leaves toll motorway · avoids tolls: ~{0} € less péage': '⚠ fait sortir de l\'autoroute · évite des péages : ~{0} € de moins',
+  '⚠ leaves toll motorway · ~{0} € extra péage (estimated)': '⚠ fait sortir de l\'autoroute · ~{0} € de péage en plus (estimé)',
+  'Alternative route {0}: {1} ({2}, {3} km)': 'Itinéraire alternatif {0} : {1} ({2}, {3} km)',
+  'Fastest route: {0} ({1} km)': 'Itinéraire le plus rapide : {0} ({1} km)',
+  'Added time = the whole trip through the station minus the fastest direct route ({0}).': 'Temps ajouté = trajet complet en passant par la station, moins l\'itinéraire direct le plus rapide ({0}).',
   'The fuel station finder for big rats': 'Le système de recherche de station essence pour les gros rats',
   'Exploring alternative routes and stations up to 15 km off your route for better deals…': 'Exploration d\'itinéraires alternatifs et des stations jusqu\'à 15 km de votre trajet…',
   'Alternative route {0}': 'Itinéraire alternatif {0}', 'via alternative route {0}': 'par l\'itinéraire alternatif {0}',
@@ -550,7 +567,7 @@ function statusTags(s) {
   if (isOut(s)) t.push(`<span class="tag bad">${tr('OUT OF STOCK · {0}', ago(s.out_since))}</span>`);
   else if (s.maybe_restocked) t.push(`<span class="tag old">${tr('outage reported {0} ago, price updated since', ago(s.out_since))}</span>`);
   if (s.opposite) t.push(`<span class="tag bad">${tr('other side of motorway')}</span>`);
-  if (mode === 'trip' && exitsToll(s)) t.push(`<span class="tag toll">${tr('⚠ leaves toll motorway · ~{0} € péage', peage().toFixed(2))}</span>`);
+  if (mode === 'trip' && exitsToll(s)) t.push(tollTag(s));
   if (!isOut(s) && s.price != null) t.push(`<span class="tag ${isFresh(s) ? 'ok' : 'old'}">${isFresh(s) ? '✓ ' : '⚠ '}${tr('price {0} old', ago(s.updated))}</span>`);
   return t.join('');
 }
@@ -637,7 +654,7 @@ function focusMarker(id, popup) {
   const m = markerById[id] || altLayer.getLayers().find(x => x.stationId === id);
   if (!m) return;
   showMap();
-  map.setView(m.getLatLng(), Math.max(map.getZoom(), 13));
+  map.setView(m.getLatLng(), Math.max(map.getZoom(), 13), {animate: false});
   if (popup && !isPip()) m.openPopup(); else m.openTooltip();
 }
 function seeOnMap(id) {
@@ -658,7 +675,7 @@ function shortDetour(s) {
 }
 
 // ---------- ideal stops: best time-vs-price trade-offs, including stations off the normal route
-function clearIdeal() { ideal = null; idealSel = null; altLayer.clearLayers(); altRoutesLayer.clearLayers(); altCount = 0; $('#idealCard').style.display = 'none'; tollExits = null; traffic = null; trafficVia = {}; trafficLayer.clearLayers(); }
+function clearIdeal() { ideal = null; idealSel = null; altLayer.clearLayers(); altRoutesLayer.clearLayers(); altCount = 0; altInfo = null; altLines = []; altOn = null; $('#altsBox').innerHTML = ''; $('#idealCard').style.display = 'none'; tollExits = null; tollEst = {}; traffic = null; trafficVia = {}; trafficLayer.clearLayers(); }
 async function fetchIdeal(my) {
   ideal = 'loading'; renderIdeal();
   try {
@@ -666,10 +683,11 @@ async function fetchIdeal(my) {
     if (my !== gen) return;
     if (r.error) throw new Error(r.error);
     ideal = r.stations;
-    altRoutesLayer.clearLayers(); altCount = (r.alternatives || []).length;
-    (r.alternatives || []).forEach((a, i) => L.polyline(a.map(c => [c[1], c[0]]), {color: '#64748b', weight: 4, opacity: .55, dashArray: '2 8'})
-      .bindTooltip(t('Alternative route {0}', i + 1), {sticky: true}).addTo(altRoutesLayer));
+    altRoutesLayer.clearLayers(); altCount = (r.alternatives || []).length; altInfo = {fastest: r.fastest_s, fastestM: r.fastest_m, list: r.alternatives || []};
+    altLines = altInfo.list.map((a, i) => L.polyline(a.coords.map(c => [c[1], c[0]]), {color: '#64748b', weight: 4, opacity: .55, dashArray: '2 8'})
+      .bindTooltip(() => altLabel(i), {sticky: true}).addTo(altRoutesLayer));
     routeLayer?.bringToFront();
+    fetchTolls(my);
     const byId = Object.fromEntries(stations.map(s => [s.id, s]));
     ideal.forEach(c => { if (byId[c.id] && byId[c.id].detour === undefined) byId[c.id].detour = c.detour; });
     renderAll(); drawMarkers();
@@ -688,7 +706,7 @@ function idealOptions() {
   const q = front[0];
   const opts = front.map(s => {
     const extraKm = Math.max(0, s.detour.km - q.detour.km), extraMin = Math.max(0, Math.round((s.detour.s - q.detour.s) / 60));
-    const tollCost = (exitsToll(s) ? peage() : 0) - (exitsToll(q) ? peage() : 0);
+    const tollCost = peageFor(s) - peageFor(q);
     const saving = (q.price - s.price) * L_ - extraKm * cons / 100 * s.price - tollCost;
     return {s, extraKm, extraMin, saving, tollCost};
   });
@@ -697,8 +715,25 @@ function idealOptions() {
   for (const o of opts.slice(1)) if (o.saving >= kept[kept.length - 1].saving + 0.5) kept.push(o);
   return kept.slice(0, 5);
 }
+function altLabel(i) {
+  const a = altInfo.list[i];
+  if (!a.duration_s) return t('Alternative route {0}', i + 1);
+  return t('Alternative route {0}: {1} ({2}, {3} km)', i + 1, hm(a.duration_s), `+${Math.max(0, Math.round((a.duration_s - altInfo.fastest) / 60))} min`, Math.round(a.distance_m / 1000));
+}
+function renderAlts() {
+  if (!altInfo) { $('#altsBox').innerHTML = ''; return; }
+  $('#altsBox').innerHTML = `<div class="alts"><div><b>🛣 ${t('Fastest route: {0} ({1} km)', hm(altInfo.fastest), Math.round(altInfo.fastestM / 1000))}</b></div>` +
+    altInfo.list.map((a, i) => `<div class="a ${altOn === i ? 'on' : ''}" data-alt="${i}">┄ ${altLabel(i)}</div>`).join('') + `</div>`;
+  $('#altsBox').querySelectorAll('[data-alt]').forEach(el => el.onclick = () => {
+    const i = +el.dataset.alt; altOn = altOn === i ? null : i;
+    altLines.forEach((l, j) => l.setStyle(j === altOn ? {color: '#334155', weight: 6, opacity: .9} : {color: '#64748b', weight: 4, opacity: .55}));
+    if (altOn !== null) { altLines[i].bringToFront(); showMap(); map.fitBounds(altLines[i].getBounds(), {padding: [20, 20]}); }
+    renderAlts();
+  });
+}
 function renderIdeal() {
   const card = $('#idealCard');
+  renderAlts();
   if (mode !== 'trip' || ideal === null) { card.style.display = 'none'; return; }
   card.style.display = 'block';
   if (ideal === 'loading') { $('#ideal').innerHTML = `<div class="note">${t('Exploring alternative routes and stations up to 15 km off your route for better deals…')}</div>`; return; }
@@ -717,10 +752,19 @@ function renderIdeal() {
         <div class="meta"><b>${mins(s.detour)}</b> · ${t('trip {0}', hm(base + s.detour.s))}</div>
         ${trafficLine(s)}
         ${i ? `<div class="meta"><span class="save">${t('saves {0} €', o.saving.toFixed(2))}</span> ${t('for {0} min more', o.extraMin)}</div>` : ''}</div>
-      ${exitsToll(s) ? `<div style="grid-column:1/-1;margin-top:4px"><span class="tag toll">${t('⚠ leaves the toll motorway · ~{0} € extra péage', peage().toFixed(2))}${i ? t(' (included in saving)') : ''}</span></div>` : ''}
+      ${exitsToll(s) ? `<div style="grid-column:1/-1;margin-top:4px">${tollTag(s, i > 0)}</div>` : ''}
+      ${idealSel === s.id ? `<div style="grid-column:1/-1">${details(s)}</div>` : ''}
     </div>`;
-  }).join('') + `<div class="note">${t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', +$('#litres').value || 40)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}${altCount ? ' ' + t('Also explored {0} different routes (grey dashed on the map).', altCount) : ''}</div>`;
-  $('#ideal').querySelectorAll('.opt').forEach(el => el.onclick = () => showVia(opts.find(o => o.s.id === el.dataset.id).s));
+  }).join('') + `<div class="note">${t('Savings compare with the quickest stop for a {0} L fill, minus the fuel burnt on the extra km', +$('#litres').value || 40)}${t(tollExits ? ' and the extra péage when a stop makes you leave a toll motorway' : ' (toll check in progress…)')}${t('. Tap an option to see its path.')}${altCount ? ' ' + t('Also explored {0} different routes (grey dashed on the map).', altCount) : ''} ${t('Added time = the whole trip through the station minus the fastest direct route ({0}).', hm(base))}</div>`;
+  $('#ideal').querySelectorAll('.opt').forEach(el => el.onclick = e => {
+    if (e.target.closest('a')) return;
+    const see = e.target.closest('[data-see]');
+    if (see) return seeOnMap(see.dataset.see);
+    if (e.target.closest('.more')) return;
+    const o = opts.find(o => o.s.id === el.dataset.id);
+    if (idealSel === o.s.id) { idealSel = null; altLayer.clearLayers(); renderIdeal(); return; }   // tap again to collapse
+    showVia(o.s);
+  });
   if (traffic) { const need = opts.map(o => o.s.id).filter(id => !(id in trafficVia)); if (need.length) fetchTrafficVia(need); }
 }
 async function showVia(s) {
@@ -742,7 +786,7 @@ async function fetchTolls(my) {
   try {
     const r = await (await fetch(`/api/tolls?trip=${encodeURIComponent(trip)}&fuel=${fuel}`)).json();
     if (my !== gen || r.error) return;
-    tollExits = new Set(r.exits); renderAll();
+    tollExits = new Set(r.exits); tollEst = r.cost || {}; renderAll();
   } catch {}
 }
 async function fetchTraffic(my) {
@@ -775,11 +819,11 @@ function worthVsQuickest(s) {
   const opts = idealOptions(); if (!opts.length || !s.detour || s.opposite || s.price == null) return '';
   const q = opts[0].s; if (q.id === s.id) return `<span class="tag ok">${t('quickest stop')}</span>`;
   const L_ = Math.max(1, +$('#litres').value || 40), cons = Math.max(1, +$('#cons').value || 7);
-  const tollCost = (exitsToll(s) ? peage() : 0) - (exitsToll(q) ? peage() : 0);
+  const tollCost = peageFor(s) - peageFor(q);
   const v = (q.price - s.price) * L_ - Math.max(0, s.detour.km - q.detour.km) * cons / 100 * s.price - tollCost;
   return v >= 0 ? `<span class="tag ok">${t('saves {0} € vs quickest stop', v.toFixed(2))}</span>` : `<span class="tag bad">${t('costs {0} € more than quickest stop', (-v).toFixed(2))}${exitsToll(s) ? ' (péage)' : ''}</span>`;
 }
-['#litres', '#cons', '#peage'].forEach(id => $(id).addEventListener('input', () => { store.set('fill', {l: $('#litres').value, c: $('#cons').value, p: $('#peage').value}); renderAll(); }));
+['#litres', '#cons'].forEach(id => $(id).addEventListener('input', () => { store.set('fill', {l: $('#litres').value, c: $('#cons').value}); renderAll(); }));
 
 // ---------- progressive detour calculation
 async function fetchDetours(my) {
@@ -801,7 +845,7 @@ async function fetchDetours(my) {
     }
   };
   await Promise.all([worker(), worker()]);
-  if (my === gen) { renderAll(); drawMarkers(); }
+  if (my === gen) { renderAll(); drawMarkers(); if (mode === 'trip') fetchTolls(my); }
 }
 
 // ---------- picture-in-picture map (portrait only)
@@ -860,7 +904,7 @@ fetch('/api/status').then(r => r.json()).then(s => {
   if (s.feed_updated) { feedTs = s.feed_updated; applyLang(); }
 }).catch(() => {});
 setRmode(store.get('rmode') || 'drive');
-const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; $('#peage').value = fill.p ?? 1.5; }
+const fill = store.get('fill'); if (fill) { $('#litres').value = fill.l || 40; $('#cons').value = fill.c || 7; }
 setMode(store.get('mode') || 'trip');
 const lastNear = store.get('lastNear');
 if (lastNear) { if (lastNear.center) { chosen.center = lastNear.center; $('#center').value = lastNear.center.label; } $('#radius').value = lastNear.radius || '10'; }
